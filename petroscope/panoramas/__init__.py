@@ -1,1 +1,1 @@
-from .stitcher import Stitcher
+from .alignment import Aligner
