@@ -1,0 +1,19 @@
+device: "cuda:5"
+
+stages:
+  align: true
+  gaincomp: true
+  graphcut: true
+
+save_transforms: true
+load_transforms: false
+
+dirs:
+  datasets_dir: "/home/g.nikolaev/data/tiles"
+  transforms_dir: "/home/g.nikolaev/data/transforms"
+  panoramas_dir: "/home/g.nikolaev/data/panoramas"
+
+gruphcut:
+  coarse_scale: 16
+  fine_scale: 4
+  line_width: 200
