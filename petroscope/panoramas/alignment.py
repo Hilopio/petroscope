@@ -8,6 +8,8 @@ import numpy as np
 import torch
 import torchvision
 from PIL import Image
+
+from logger import logger
 from bundle_adjustment import optimize
 
 
@@ -235,11 +237,10 @@ class Aligner:
 
         pivot -= idx_shift[pivot]
 
-        print('optimizing')
         final_transforms, init_error, optim_error = optimize(
             real_transforms, real_inliers, pivot
         )
-        print(f'final error = {optim_error}')
+        logger.debug(f'final error = {optim_error}')
 
         T, panorama_size = find_translation_and_panorama_size(orig_sizes, final_transforms)
         final_transforms = [T @ H for H in final_transforms]
@@ -253,5 +254,11 @@ class Aligner:
         targetIdx = [targetIdx[i] - idx_shift[targetIdx[i]] for i in range(len(targetIdx))]
         final_transforms = [final_transforms[i] for i in targetIdx]
 
+        if len(outliersIdx) > 0:
+            logger.debug(f'{len(outliersIdx)} image{"s" if len(outliersIdx) > 1 else ""} cannot be aligned')
+        else:
+            logger.debug(f'all images aligned')
+
+        return final_transforms, panorama_size, new_img_paths
         print(f'{len(outliersIdx)} image{"s" if len(outliersIdx) > 1 else ""} cannot be aligned')
         return final_transforms, panorama_size, new_img_paths

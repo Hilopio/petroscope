@@ -1,10 +1,10 @@
-device: "cuda:5"
+device: "cuda:6"
 
 stages:
   align: true
   gaincomp: true
   graphcut: true
-  blending: true
+  blending: false
 
 save_transforms: true
 load_transforms: false
@@ -12,7 +12,7 @@ load_transforms: false
 dirs:
   datasets_dir: "/home/g.nikolaev/data/tiles"
   transforms_dir: "/home/g.nikolaev/data/transforms"
-  panoramas_dir: "/home/g.nikolaev/data/panoramas_blended"
+  panoramas_dir: "/home/g.nikolaev/data/panoramas"
 
 graphcut:
   coarse_scale: 16
