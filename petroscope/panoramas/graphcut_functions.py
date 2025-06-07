@@ -1,9 +1,7 @@
 import numpy as np
 import cv2
 import maxflow
-import matplotlib.pyplot as plt
-from pathlib import Path
-from utils import _load_images, _load_transforms, _save, _warp
+from utils import _warp
 
 
 def diff(img1, img2):
@@ -120,6 +118,34 @@ def coarse_to_fine_optimal_seam(img1, img2, mask1, mask2, small_in_wide_slice,
     fine_labels = scaled_graph_cut(img1, img2, sure1, sure2, scale=fine_scale)
 
     return fine_labels
+
+
+def find_graphcut_mask(images, transforms, panorama_size, coarse_scale=16, fine_scale=4, lane_width=200):
+    n_images = len(images)
+    pano, pano_mask = _warp(images[0], transforms[0], panorama_size)
+    img_indexes = pano_mask.astype('int8') - np.ones_like(pano_mask, dtype='int8')
+
+    for i in range(1, n_images):
+        warped_img, warped_mask = _warp(images[i], transforms[i], panorama_size)
+
+        small_window_slice, wide_window_slice, small_in_wide_slice = find_overlap_region(pano_mask, warped_mask)
+
+        inter_img1 = pano[wide_window_slice]
+        inter_mask1 = pano_mask[wide_window_slice]
+        inter_img2 = warped_img[wide_window_slice]
+        inter_mask2 = warped_mask[wide_window_slice]
+
+        labels = coarse_to_fine_optimal_seam(inter_img1, inter_img2, inter_mask1, inter_mask2,
+                                             small_in_wide_slice, coarse_scale=coarse_scale,
+                                             fine_scale=fine_scale, lane_width=lane_width)
+
+        # warped_mask[wide_window_slice] = np.where(labels, False, True)
+        warped_mask[small_window_slice] = np.where(labels[small_in_wide_slice], False, True)
+        pano = np.where(warped_mask[..., np.newaxis], warped_img, pano)
+        img_indexes = np.where(warped_mask, i, img_indexes)
+        pano_mask = warped_mask | pano_mask
+
+    return img_indexes
 
 
 def _warp_coarse_to_fine(images, transforms, panorama_size, coarse_scale=16, fine_scale=4, lane_width=200):

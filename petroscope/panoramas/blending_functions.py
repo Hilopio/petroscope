@@ -1,32 +1,6 @@
 import cv2
 import numpy as np
 
-from utils import _warp, _warp_img
-from graphcut_functions import coarse_to_fine_optimal_seam
-
-def find_overlap_region(mask1, mask2, eps=200):
-    h, w = mask1.shape[:2]
-    overlap_mask = mask1 & mask2
-    overlap_idx = np.nonzero(overlap_mask)
-    assert overlap_idx[0].size != 0, "нет области пересечения"
-
-    y_min, y_max = np.min(overlap_idx[0]), np.max(overlap_idx[0])
-    x_min, x_max = np.min(overlap_idx[1]), np.max(overlap_idx[1])
-    Y_MIN, Y_MAX = max(y_min - eps, 0), min(y_max + eps, h),
-    X_MIN, X_MAX = max(x_min - eps, 0), min(x_max + eps, w)
-
-    small_window_slice = slice(y_min, y_max), slice(x_min, x_max)
-    wide_window_slice = slice(Y_MIN, Y_MAX), slice(X_MIN, X_MAX)
-    small_in_wide_slice = slice(y_min-Y_MIN, y_max-Y_MIN), slice(x_min-X_MIN, x_max-X_MIN)
-
-    slices = (
-        small_window_slice,
-        wide_window_slice,
-        small_in_wide_slice
-    )
-    return slices
-
-
 def get_gaussian_level(img, sigmas, k):
     if k == 0:
         return img
@@ -99,8 +73,6 @@ def warpPerspectiveBlurBorder(img, H, panorama_size, sigma):
 
 def multi_band_blending(images, masks, transforms, panorama_size, levels):
     sigmas = [2.0 ** k for k in range(levels - 1)]
-    # sigma0 = 1
-    # sigmas = [np.sqrt(2.0 * k + 1) * sigma0 for k in range(levels - 1)]
 
     warped_images = [
         # warped_image = _warp_img(images[i], transforms[i], panorama_size)
@@ -130,31 +102,3 @@ def multi_band_blending(images, masks, transforms, panorama_size, levels):
     pano_mask = np.where(pano_mask > 0, 1, 0)
 
     return pano * pano_mask[..., np.newaxis]
-
-
-def find_graphcut_mask(images, transforms, panorama_size, coarse_scale=16, fine_scale=4, lane_width=200):
-    n = len(images)
-    pano, pano_mask = _warp(images[0], transforms[0], panorama_size)
-    img_indexes = pano_mask.astype('int8') - np.ones_like(pano_mask, dtype='int8')
-
-    for i in range(1, n):
-        warped_img, warped_mask = _warp(images[i], transforms[i], panorama_size)
-
-        small_window_slice, wide_window_slice, small_in_wide_slice = find_overlap_region(pano_mask, warped_mask)
-
-        inter_img1 = pano[wide_window_slice]
-        inter_mask1 = pano_mask[wide_window_slice]
-        inter_img2 = warped_img[wide_window_slice]
-        inter_mask2 = warped_mask[wide_window_slice]
-
-        labels = coarse_to_fine_optimal_seam(inter_img1, inter_img2, inter_mask1, inter_mask2,
-                                             small_in_wide_slice, coarse_scale=coarse_scale,
-                                             fine_scale=fine_scale, lane_width=lane_width)
-
-        # warped_mask[wide_window_slice] = np.where(labels, False, True)
-        warped_mask[small_window_slice] = np.where(labels[small_in_wide_slice], False, True)
-        pano = np.where(warped_mask[..., np.newaxis], warped_img, pano)
-        img_indexes = np.where(warped_mask, i, img_indexes)
-        pano_mask = warped_mask | pano_mask
-
-    return img_indexes

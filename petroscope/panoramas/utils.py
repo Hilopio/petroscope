@@ -53,7 +53,6 @@ def _warp_img(img, H, panorama_size):
         img,
         H,
         panorama_size,
-        flags=cv2.INTER_NEAREST,
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=(borderValue, borderValue, borderValue)
     )
@@ -62,17 +61,24 @@ def _warp_img(img, H, panorama_size):
 
 def _warp_mask(mask, H, panorama_size):
     warped_mask = cv2.warpPerspective(
-        mask,
+        mask.astype('float32'),
         H,
         panorama_size,
-        flags=cv2.INTER_NEAREST,
         borderMode=cv2.BORDER_CONSTANT,
         borderValue=0
-    ).astype('bool')
+    )
+    warped_mask = (warped_mask == 1)
     return warped_mask
-
 
 def _warp(image, H, panorama_size):
     warped_mask = _warp_mask(np.ones(image.shape[:-1], dtype=int), H, panorama_size)
     warped_img = _warp_img(image, H, panorama_size)
     return warped_img, warped_mask
+
+def _warp_masked_collage(images, transforms, panorama_size, masks):
+    n_images = len(images)
+    panorama = np.zeros((*panorama_size[::-1], 3), dtype=np.float32)
+    for i in range(n_images):
+        warped_img = _warp_img(images[i], transforms[i], panorama_size)
+        panorama = np.where(masks[i], warped_img, panorama)
+    return panorama

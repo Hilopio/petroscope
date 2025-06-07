@@ -4,16 +4,16 @@ stages:
   align: true
   gaincomp: true
   graphcut: true
-  blending: false
+  blending: true
 
 save_transforms: true
 load_transforms: false
 
 dirs:
-  datasets_dir: "/home/g.nikolaev/data/tiles"
-  inliers_dir: "/home/g.nikolaev/data/inliers"
-  transforms_dir: "/home/g.nikolaev/data/transforms"
-  panoramas_dir: "/home/g.nikolaev/data/panoramas_blended"
+  datasets_dir: "/home/g.nikolaev/data/new_tiles"
+  inliers_dir: "/home/g.nikolaev/data/matches"
+  transforms_dir: "/home/g.nikolaev/data/new_transforms"
+  panoramas_dir: "/home/g.nikolaev/data/new_panoramas"
 
 graphcut:
   coarse_scale: 16
