@@ -11,7 +11,7 @@ from gain_compensation_functions import gain_compensation, compensate_mean_color
 from graphcut_functions import _warp_coarse_to_fine
 from blending_functions import multi_band_blending, find_graphcut_mask
 
-@hydra.main(version_base="1.2", config_path=".", config_name="config2.yaml")
+@hydra.main(version_base="1.2", config_path=".", config_name="config.yaml")
 def stitch_all_panoramas(cfg: DictConfig):
     logger.debug(f"Processing: {cfg.dirs.datasets_dir}")
     logger.debug(f"Results: {cfg.dirs.panoramas_dir}")
