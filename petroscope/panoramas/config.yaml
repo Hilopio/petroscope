@@ -1,19 +1,19 @@
 device: "cuda:5"
 
 stages:
-  align: true
+  align: false
   gaincomp: true
   graphcut: true
   blending: true
 
-save_transforms: true
-load_transforms: false
+save_transforms: false
+load_transforms: true
 
 dirs:
-  datasets_dir: "/home/g.nikolaev/data/new_tiles"
+  datasets_dir: "/home/g.nikolaev/data/tmp_tiles"
   inliers_dir: "/home/g.nikolaev/data/matches"
-  transforms_dir: "/home/g.nikolaev/data/new_transforms"
-  panoramas_dir: "/home/g.nikolaev/data/new_panoramas"
+  transforms_dir: "/home/g.nikolaev/data/tmp_transforms"
+  panoramas_dir: "/home/g.nikolaev/data/tmp_panoramas_2"
 
 graphcut:
   coarse_scale: 16
@@ -21,4 +21,4 @@ graphcut:
   lane_width: 200
 
 blending:
-  levels: 7
+  levels: 9
