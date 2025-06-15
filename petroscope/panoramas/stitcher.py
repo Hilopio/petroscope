@@ -8,7 +8,8 @@ from alignment import Aligner
 from utils import _warp_collage, _save, _load_transforms, _load_images, _warp_masked_collage
 from gain_compensation_functions import gain_compensation, compensate_mean_color, find_mean_color
 from graphcut_functions import find_graphcut_mask
-from fast_blending import multi_band_blending
+from pyramid_blending import multi_band_blending
+# from fast_blending import multi_band_blending
 # from blending_functions import multi_band_blending
 
 class Stitcher:
