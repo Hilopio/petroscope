@@ -1,19 +1,19 @@
-device: None
+device: 'cuda:5'
 
 stages:
-  align: false
-  gaincomp: true
-  graphcut: true
-  blending: true
+  align: true
+  gaincomp: false
+  graphcut: false
+  blending: false
 
 save_transforms: false
 load_transforms: true
 
 dirs:
-  datasets_dir: "/home/g.nikolaev/data/tiles"
-  inliers_dir: "/home/g.nikolaev/data/matches"
-  transforms_dir: "/home/g.nikolaev/data/transforms"
-  panoramas_dir: "/home/g.nikolaev/data/panoramas"
+  datasets_dir: "/home/g.nikolaev/data/metal_tiles"
+  matches_dir: "/home/g.nikolaev/data/metal_matches"
+  transforms_dir: "/home/g.nikolaev/data/metal_transforms_5"
+  panoramas_dir: "/home/g.nikolaev/data/metal_panoramas_5"
 
 graphcut:
   coarse_scale: 16

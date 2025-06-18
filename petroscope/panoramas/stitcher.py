@@ -1,4 +1,3 @@
-from omegaconf import DictConfig
 from pathlib import Path
 from logger import logger
 import pickle
@@ -9,31 +8,32 @@ from utils import _warp_collage, _save, _load_transforms, _load_images, _warp_ma
 from gain_compensation_functions import gain_compensation, compensate_mean_color, find_mean_color
 from graphcut_functions import find_graphcut_mask
 from pyramid_blending import multi_band_blending
-# from fast_blending import multi_band_blending
-# from blending_functions import multi_band_blending
 
 class Stitcher:
-    def __init__(self, cfg: DictConfig) -> None:
-        self.device = cfg.device
+    def __init__(self, device, align, gaincomp, graphcut, blending, save_transforms,
+                 load_transforms, datasets_dir, matches_dir, transforms_dir, 
+                 panoramas_dir, coarse_scale, fine_scale, lane_width, levels) -> None:
 
-        self.align = cfg.stages.align
-        self.gaincomp = cfg.stages.gaincomp
-        self.graphcut = cfg.stages.graphcut
-        self.blending = cfg.stages.blending
+        self.device = device
 
-        self.save_transforms = cfg.save_transforms
-        self.load_transforms = cfg.load_transforms
+        self.align = align
+        self.gaincomp = gaincomp
+        self.graphcut = graphcut
+        self.blending = blending
 
-        self.datasets_dir = cfg.dirs.datasets_dir
-        self.inliers_dir = cfg.dirs.inliers_dir
-        self.transforms_dir = cfg.dirs.transforms_dir
-        self.panoramas_dir = cfg.dirs.panoramas_dir
+        self.save_transforms = save_transforms
+        self.load_transforms = load_transforms
 
-        self.coarse_scale = cfg.graphcut.coarse_scale
-        self.fine_scale = cfg.graphcut.fine_scale
-        self.lane_width = cfg.graphcut.lane_width
+        self.datasets_dir = datasets_dir
+        self.matches_dir = matches_dir
+        self.transforms_dir = transforms_dir
+        self.panoramas_dir = panoramas_dir
 
-        self.levels = cfg.blending.levels
+        self.coarse_scale = coarse_scale
+        self.fine_scale = fine_scale
+        self.lane_width = lane_width
+
+        self.levels = levels
         
 
     def stitch(self, dataset, series, aligner):

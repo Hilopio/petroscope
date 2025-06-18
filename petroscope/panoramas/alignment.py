@@ -219,13 +219,15 @@ class Aligner:
         outliers_mask = [1 if i in outliersIdx else 0 for i in range(n)]
         idx_shift = np.cumsum(outliers_mask)
 
-        real_transforms = []
-        for i in range(len(transforms)):
-            if i in outliersIdx:
-                assert transforms[i] is None
-                continue
-            assert transforms[i] is not None
-            real_transforms.append(transforms[i])
+        # real_transforms = []
+        # for i in range(len(transforms)):
+        #     if i in outliersIdx:
+        #         assert transforms[i] is None
+        #         continue
+        #     assert transforms[i] is not None
+        #     real_transforms.append(transforms[i])
+
+        real_transforms = [transforms[i] for i in targetIdx]
 
         real_inliers = []
         for inl in inliers:
@@ -234,15 +236,32 @@ class Aligner:
                 continue
             inl[0], inl[1] = inl[0] - idx_shift[inl[0]], inl[1] - idx_shift[inl[1]]
             real_inliers.append(inl)
-
         pivot -= idx_shift[pivot]
+        
 
+        # recentering
+        sizes = [orig_sizes[i] for i in targetIdx]
+        n_recenterings = 25
+        for _ in range(n_recenterings):
+            real_transforms, new_pivot = recentering(real_transforms, sizes)
+            if new_pivot == pivot:
+                break
+            pivot = new_pivot
+        
         final_transforms, init_error, optim_error = optimize(
             real_transforms, real_inliers, pivot
         )
         logger.debug(f'final error = {optim_error}')
 
-        T, panorama_size = find_translation_and_panorama_size(orig_sizes, final_transforms)
+        # second recentering
+        for _ in range(n_recenterings):
+            final_transforms, new_pivot = recentering(final_transforms, sizes)
+            if new_pivot == pivot:
+                break
+            pivot = new_pivot
+        # final_transforms, _ = recentering(final_transforms, sizes)
+
+        T, panorama_size = find_translation_and_panorama_size(orig_sizes, final_transforms) # скорее всего orig_sizes -> sizes
         final_transforms = [T @ H for H in final_transforms]
 
         # Проверка на адекватность размера панорамы
@@ -260,5 +279,34 @@ class Aligner:
             logger.debug(f'all images aligned')
 
         return final_transforms, panorama_size, new_img_paths
-        print(f'{len(outliersIdx)} image{"s" if len(outliersIdx) > 1 else ""} cannot be aligned')
-        return final_transforms, panorama_size, new_img_paths
+
+def recentering(transforms, sizes):
+    N = len(transforms)
+    assert len(sizes) == N
+
+    img_centers = [ 
+        [size[0] / 2, size[1] / 2] for size in sizes
+    ]
+    warped_img_centers = []
+    for center, H in zip(img_centers, transforms):
+        new_center = H @ np.array([center[0], center[1], 1])
+        new_center /= new_center[2]
+        warped_img_centers.append(new_center[:2])
+    warped_img_centers = np.array(warped_img_centers)
+    assert warped_img_centers.shape == (N, 2)
+
+    # panorama_center = np.mean(warped_img_centers, axis=0)
+
+    x_min, x_max = np.min(warped_img_centers[:, 0]), np.max(warped_img_centers[:, 0])
+    y_min, y_max = np.min(warped_img_centers[:, 1]), np.max(warped_img_centers[:, 1])
+    panorama_center = np.array((0.5 * (x_min + x_max), 0.5 * (y_min + y_max)))
+
+    new_pivot = np.argmin(((warped_img_centers - panorama_center) ** 2).mean(axis=1))
+
+    inv_pivot_H = np.linalg.inv(transforms[new_pivot])
+    new_transforms = []
+    for H in transforms:
+        new_H = inv_pivot_H @ H
+        new_H /= new_H[2, 2]
+        new_transforms.append(new_H)
+    return new_transforms, new_pivot
