@@ -1,5 +1,90 @@
 
 from classes import MatchesData, AlignData
+import numpy as np
+import cv2
+
+
+def find_translation_and_panorama_size(sizes, transformations):
+    """
+    Calculate translation matrix and panorama size based on transformed image corners.
+    
+    Args:
+        sizes: List of tuples representing the original sizes (width, height) of images.
+        transformations: List of transformation matrices (homographies) for each image.
+    
+    Returns:
+        tuple: A tuple containing:
+            - Translation matrix to shift the panorama to positive coordinates.
+            - Tuple representing the panorama size (width, height).
+    """
+    x_coords, y_coords = [], []
+    for size, H in zip(sizes, transformations):
+        if H is None:
+            continue
+        corners = np.array([
+            [0, 0, 1],
+            [0, size[1], 1],
+            [size[0], 0, 1],
+            [size[0], size[1], 1]
+        ])
+        new_corners = H @ corners.T
+
+        new_corners /= new_corners[2]
+        x_coords += new_corners[0].tolist()
+        y_coords += new_corners[1].tolist()
+
+    x_min, x_max = np.min(x_coords), np.max(x_coords)
+    y_min, y_max = np.min(y_coords), np.max(y_coords)
+
+    T = np.array([[1, 0, -x_min],
+                  [0, 1, -y_min],
+                  [0, 0, 1]])
+
+    panorama_size = (int(np.ceil(x_max - x_min)), int(np.ceil(y_max - y_min)))
+    return T, panorama_size
+
+def recentering(transforms, sizes):
+    """
+    Recenter the transformations to improve panorama alignment.
+    
+    Args:
+        transforms: List of transformation matrices (homographies) for each image.
+        sizes: List of original sizes of the images.
+    
+    Returns:
+        tuple: A tuple containing:
+            - List of recentered transformation matrices.
+            - Index of the new pivot image.
+    """
+    N = len(transforms)
+    assert len(sizes) == N
+
+    img_centers = [ 
+        [size[0] / 2, size[1] / 2] for size in sizes
+    ]
+    warped_img_centers = []
+    for center, H in zip(img_centers, transforms):
+        new_center = H @ np.array([center[0], center[1], 1])
+        new_center /= new_center[2]
+        warped_img_centers.append(new_center[:2])
+    warped_img_centers = np.array(warped_img_centers)
+    assert warped_img_centers.shape == (N, 2)
+
+    x_min, x_max = np.min(warped_img_centers[:, 0]), np.max(warped_img_centers[:, 0])
+    y_min, y_max = np.min(warped_img_centers[:, 1]), np.max(warped_img_centers[:, 1])
+    panorama_center = np.array((0.5 * (x_min + x_max), 0.5 * (y_min + y_max)))
+
+    new_pivot = np.argmin(((warped_img_centers - panorama_center) ** 2).mean(axis=1))
+
+    inv_pivot_H = np.linalg.inv(transforms[new_pivot])
+    new_transforms = []
+    for H in transforms:
+        new_H = inv_pivot_H @ H
+        new_H /= new_H[2, 2]
+        new_transforms.append(new_H)
+    return new_transforms, new_pivot
+
+from classes import OptimizeData, AlignmentData
 
 def find_homographies(matches_data: 'MatchesData') -> 'AlignData':
     """
@@ -12,10 +97,7 @@ def find_homographies(matches_data: 'MatchesData') -> 'AlignData':
     Returns:
         AlignData: Data object containing image paths, transformations (homographies),
                    reference index for alignment, and inliers.
-    """
-    import cv2
-    import numpy as np
-    
+    """    
     diff_corr = matches_data.matches
     orig_sizes = matches_data.orig_sizes
     img_paths = matches_data.img_paths
@@ -115,5 +197,36 @@ def find_homographies(matches_data: 'MatchesData') -> 'AlignData':
         real_inliers.append(inl)
     pivot -= idx_shift[pivot]
     
+    # Recenter the transformations
+    sizes = [orig_sizes[i] for i in targetIdx]
+    n_recenterings = 25
+    for _ in range(n_recenterings):
+        real_transforms, new_pivot = recentering(real_transforms, sizes)
+        if new_pivot == pivot:
+            break
+        pivot = new_pivot
+    
+    # Reordering
+    new_img_paths = [img_paths[i] for i in targetIdx]
+    targetIdx = [targetIdx[i] - idx_shift[targetIdx[i]] for i in range(len(targetIdx))]
+    real_transforms = [real_transforms[i] for i in targetIdx]
+    
     # Use the full list of img_paths from input
-    return AlignData(img_paths, real_transforms, pivot, real_inliers)
+    return AlignData(new_img_paths, real_transforms, pivot, real_inliers)
+
+def alignment(optimize_data: 'OptimizeData') -> 'AlignmentData':
+    """
+    Finalize alignment by calculating panorama size and applying translation to transformations.
+    
+    Args:
+        optimize_data: OptimizeData object containing optimized transformations and pivot index.
+    
+    Returns:
+        AlignmentData: Data object containing final transformations, panorama size, and image paths.
+    """
+    img_paths = optimize_data.img_paths
+    transforms = optimize_data.transforms
+    pivot = optimize_data.pivot
+    T, panorama_size = find_translation_and_panorama_size(img_paths, transforms)
+    final_transforms = [T @ H for H in transforms]
+    return AlignmentData(img_paths, final_transforms, panorama_size, pivot)
