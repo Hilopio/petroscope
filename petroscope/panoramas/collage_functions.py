@@ -1,11 +1,11 @@
 import cv2
 import numpy as np
 from PIL import Image
-from classes import OptimizeData, PanoramaData
+from classes import StitchingData, PanoramaData
 
 borderValue = 0.0
 
-def make_collage(optimize_data: 'OptimizeData') -> 'PanoramaData':
+def make_collage(optimize_data: 'StitchingData') -> 'PanoramaData':
     """
     Create a collage-style panorama from optimized image data.
     

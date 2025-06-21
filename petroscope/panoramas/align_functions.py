@@ -1,16 +1,17 @@
 
-from classes import StitchingData, MatchStruct
+from classes import StitchingData, Match, TileSet
 import numpy as np
 import cv2
 
+
 def find_homographies_and_inliers(
-        matches : list[MatchStruct],
-        n : int,
-        confidence_threshold : float, 
-        min_inliers : int, 
-        max_inliers : int, 
-        min_inliers_rate : float
-    ) -> tuple[list[list[np.ndarray]], list[MatchStruct], np.ndarray]:
+    matches: list[Match],
+    n: int,
+    confidence_threshold: float,
+    min_inliers: int,
+    max_inliers: int,
+    min_inliers_rate: float
+) -> tuple[list[list[np.ndarray]], list[Match], np.ndarray]:
 
     inliers = []
     Hs = [[None] * n for _ in range(n)]
@@ -20,11 +21,10 @@ def find_homographies_and_inliers(
     for i in range(n - 1):
         for j in range(i + 1, n):
             matches_ij = list(filter(lambda x: x.i == i and x.j == j, matches))
-            
+
             if len(matches_ij) < min_inliers:
                 continue
-                
-            # Run RANSAC to find homography
+
             H_ij, mask = cv2.findHomography(
                 matches_ij.xy_i,
                 matches_ij.xy_j,
@@ -41,21 +41,22 @@ def find_homographies_and_inliers(
 
             if num / len(matches_ij) < min_inliers_rate:
                 continue
-                
+
             num_inliers[i][j] = num
             num_inliers[j][i] = num
-            
+
             Hs[i][j] = H_ij
             try:
                 Hs[j][i] = np.linalg.inv(H_ij)
                 Hs[j][i] /= Hs[j][i][2, 2]
             except np.linalg.LinAlgError:
                 assert "Singular homography matrix"
-                
+
             inliers_ij = matches_ij[mask.ravel().astype(bool)]
             topk_inliers_ij = list(sorted(inliers_ij, key=lambda x: x.conf, reverse=True))[:max_inliers]
             inliers.append(topk_inliers_ij)
     return Hs, inliers, num_inliers
+
 
 def sequential_alignment(Hs, num_inliers) -> tuple[list[np.ndarray], list[int]]:
     n = len(Hs)
@@ -63,17 +64,17 @@ def sequential_alignment(Hs, num_inliers) -> tuple[list[np.ndarray], list[int]]:
     queryIdx = [i for i in range(n)]
     targetIdx = []
     outliersIdx = []
-    
-    pivot = np.argmax(num_inliers.sum(axis=1))
 
-    targetIdx.append(pivot)
-    queryIdx.remove(pivot)
-    
+    reper_idx = np.argmax(num_inliers.sum(axis=1))
+
+    targetIdx.append(reper_idx)
+    queryIdx.remove(reper_idx)
+
     while queryIdx:
         a = num_inliers[queryIdx, :][:, targetIdx]
         curr = np.argmax(a.sum(axis=1))
         best_neighb = np.argmax(a[curr])
-        
+
         if Hs[queryIdx[curr]][targetIdx[best_neighb]] is None:
             assert num_inliers[queryIdx[curr], targetIdx[best_neighb]] == 0, \
                 f"None homography, matches = {num_inliers[queryIdx[curr], targetIdx[best_neighb]]}"
@@ -81,7 +82,7 @@ def sequential_alignment(Hs, num_inliers) -> tuple[list[np.ndarray], list[int]]:
             outliersIdx.append(queryIdx[curr])
             queryIdx.pop(curr)
             continue
-            
+
         H = (
             transforms[targetIdx[best_neighb]]
             @ Hs[queryIdx[curr]][targetIdx[best_neighb]]
@@ -90,7 +91,7 @@ def sequential_alignment(Hs, num_inliers) -> tuple[list[np.ndarray], list[int]]:
         transforms[queryIdx[curr]] = H
         targetIdx.append(queryIdx[curr])
         queryIdx.pop(curr)
-    return transforms, targetIdx
+    return transforms, targetIdx, reper_idx
 
 
 def recentering_iteration(transforms, img_centers):
@@ -115,86 +116,56 @@ def recentering_iteration(transforms, img_centers):
         new_transforms.append(new_H)
     return new_transforms, new_pivot
 
-def recentering(transforms, sizes, n_iterations):
+
+def recentering(tile_set, n_iterations):
     """
     Recenter the transformations to improve panorama alignment.
-    
+
     Args:
         transforms: List of transformation matrices (homographies) for each image.
         sizes: List of original sizes of the images.
-    
+
     Returns:
         tuple: A tuple containing:
             - List of recentered transformation matrices.
             - Index of the new pivot image.
     """
+
+    img_centers = []
+    homographies = []
+    for id in tile_set.order:
+        img = tile_set.images[id]
+        size = img.orig_size
+        img_centers.append([size[0] / 2, size[1] / 2])
+        homographies.append(img.homography)
+
     last_reper_idx = None
 
-    img_centers = [[size[0] / 2, size[1] / 2] for size in sizes]
     for _ in range(n_iterations):
-        new_transforms, reper_idx = recentering_iteration(transforms, img_centers)
+        new_transforms, reper_idx = recentering_iteration(homographies, img_centers)
         if last_reper_idx == reper_idx:
             break
         last_reper_idx = reper_idx
-    
+
     return new_transforms, reper_idx
 
 
-def find_translation_and_panorama_size(sizes, transformations):
-    """
-    Calculate translation matrix and panorama size based on transformed image corners.
-    
-    Args:
-        sizes: List of tuples representing the original sizes (width, height) of images.
-        transformations: List of transformation matrices (homographies) for each image.
-    
-    Returns:
-        tuple: A tuple containing:
-            - Translation matrix to shift the panorama to positive coordinates.
-            - Tuple representing the panorama size (width, height).
-    """
-    x_coords, y_coords = [], []
-    for size, H in zip(sizes, transformations):
-        if H is None:
-            continue
-        corners = np.array([
-            [0, 0, 1],
-            [0, size[1], 1],
-            [size[0], 0, 1],
-            [size[0], size[1], 1]
-        ])
-        new_corners = H @ corners.T
-
-        new_corners /= new_corners[2]
-        x_coords += new_corners[0].tolist()
-        y_coords += new_corners[1].tolist()
-
-    x_min, x_max = np.min(x_coords), np.max(x_coords)
-    y_min, y_max = np.min(y_coords), np.max(y_coords)
-
-    T = np.array([[1, 0, -x_min],
-                  [0, 1, -y_min],
-                  [0, 0, 1]])
-
-    panorama_size = (int(np.ceil(x_max - x_min)), int(np.ceil(y_max - y_min)))
-    return T, panorama_size
-
-def find_homographies(matches_data: 'StitchingData') -> 'StitchingData':
+def matches_alignment(matches_data: 'StitchingData') -> 'StitchingData':
     """
     Find homographies between images based on matching data.
-    
+
     Args:
         matches_data: MatchesData object containing correspondences between images
                       and original sizes.
-    
+
     Returns:
         AlignData: Data object containing image paths, transformations (homographies),
                    reference index for alignment, and inliers.
-    """    
-    image_set = matches_data.image_set
+    """
+    tile_set = matches_data.tile_set
     matches = matches_data.matches
 
-    n = len(image_set)
+    n = len(tile_set.images)
     confidence_threshold = 0.95
     min_inliers = 5
     max_inliers = 30
@@ -209,14 +180,14 @@ def find_homographies(matches_data: 'StitchingData') -> 'StitchingData':
         min_inliers_rate
     )
 
-    homographies, new_idx_order = sequential_alignment(Hs, num_inliers)
+    homographies, new_idx_order, reper_idx = sequential_alignment(Hs, num_inliers)
 
     outliers_mask = [1 if i not in new_idx_order else 0 for i in range(n)]
     idx_shift = np.cumsum(outliers_mask)
-    
+
     homographies = [homographies[i] for i in new_idx_order]
     inliers = [
-        MatchStruct(
+        Match(
             inlier.i - idx_shift[inlier.i],
             inlier.j - idx_shift[inlier.j],
             inlier.xy_i,
@@ -227,34 +198,73 @@ def find_homographies(matches_data: 'StitchingData') -> 'StitchingData':
         if inlier.i in new_idx_order and inlier.j in new_idx_order
     ]
     reper_idx -= idx_shift[reper_idx]
-    image_set.order = [image_set.order[new_idx] for new_idx in new_idx_order]
-    sizes = [
-        image_set.images[id].orig_size
-        for id in image_set.order
-    ]
+    tile_set.order = [tile_set.order[new_idx] for new_idx in new_idx_order]
 
     n_iterations = 25
-    homographies, reper_idx = recentering(homographies, sizes, n_iterations)
-    
-    return StitchingData(image_set, inliers, homographies, reper_idx, None)
+    homographies, reper_idx = recentering(tile_set, n_iterations)
 
-def alignment(data: 'StitchingData') -> 'StitchingData':
+    return StitchingData(tile_set, inliers, reper_idx, None)
+
+
+def find_translation_and_panorama_size(tile_set: TileSet):
+    """
+    Calculate translation matrix and panorama size based on transformed image corners.
+
+    Args:
+        sizes: List of tuples representing the original sizes (width, height) of images.
+        transformations: List of transformation matrices (homographies) for each image.
+
+    Returns:
+        tuple: A tuple containing:
+            - Translation matrix to shift the panorama to positive coordinates.
+            - Tuple representing the panorama size (width, height).
+    """
+    sizes = []
+    homographies = []
+    for id in tile_set.order:
+        img = tile_set.images[id]
+        sizes.append(img.orig_size)
+        homographies.append(img.homography)
+
+    x_coords, y_coords = [], []
+    for (w, h), H in zip(sizes, homographies):
+        assert H is not None
+        corners = np.array([
+            [0, 0, 1],
+            [0, h, 1],
+            [w, 0, 1],
+            [w, h, 1]
+        ])
+        new_corners = H @ corners.T
+        new_corners /= new_corners[2]
+        x_coords += new_corners[0].tolist()
+        y_coords += new_corners[1].tolist()
+
+    x_min, x_max = np.min(x_coords), np.max(x_coords)
+    y_min, y_max = np.min(y_coords), np.max(y_coords)
+
+    T = np.array([[1, 0, -x_min],
+                  [0, 1, -y_min],
+                  [0, 0, 1]])
+
+    panorama_size = (int(np.ceil(x_max - x_min)), int(np.ceil(y_max - y_min)))
+    return T, panorama_size
+
+
+def translate_and_add_panorama_size(data: 'StitchingData') -> 'StitchingData':
     """
     Finalize alignment by calculating panorama size and applying translation to transformations.
-    
+
     Args:
         optimize_data: OptimizeData object containing optimized transformations and pivot index.
-    
+
     Returns:
         AlignmentData: Data object containing final transformations, panorama size, and image paths.
     """
-    image_set = data.image_set
-    homographies = data.homographies
-    sizes = [
-        image_set.images[id].orig_size
-        for id in image_set.order
-    ]
+    tile_set = data.tile_set
+    T, panorama_size = find_translation_and_panorama_size(tile_set)
+    for id in tile_set.order:
+        img = tile_set.images[id]
+        img.homography = T @ img.homography
 
-    T, panorama_size = find_translation_and_panorama_size(homographies, sizes)
-    final_transforms = [T @ H for H in homographies]
-    return StitchingData(image_set, data.matches, final_transforms, data.reper_id, panorama_size)
+    return StitchingData(tile_set, data.matches, data.reper_id, panorama_size)

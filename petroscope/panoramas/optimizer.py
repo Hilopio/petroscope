@@ -1,15 +1,18 @@
-from classes import StitchingData, MatchStruct
+from classes import StitchingData
 import numpy as np
 from scipy.optimize import least_squares
 
 
 class Optimizer:
-    def __init__(self, data: 'StitchingData'):
+    def __init__(self, data: StitchingData):
         self.data = data
         self.inliers = data.inliers
         self.reper_idx = data.reper_idx
-        self.homographies = data.homographies
-    
+        self.homographies = []
+        for id in data.tile_set.order:
+            img = data.tile_set.images[id]
+            self.homographies.append(img.homography)
+
     def vec_to_homography(self, vec: np.ndarray, i: int) -> np.ndarray:
         if i == self.reper_idx:
             return np.eye(3)
@@ -41,7 +44,7 @@ class Optimizer:
                 vec[8 * (i - 1): 8 * i] = H
 
         return vec
-    
+
     def project(self, xy, H):
         point = np.concatenate([xy, np.array([1])])
         new_point = np.dot(H, point)
@@ -63,32 +66,29 @@ class Optimizer:
 
         return np.array(errors)
 
-
-    def bundle_adjustment(self) -> 'StitchingData':
+    def bundle_adjustment(self) -> StitchingData:
         """
         Optimize the transformations using bundle adjustment to minimize reprojection error.
-        
+
         Args:
             align_data: AlignData object containing image paths, transformations, reference index,
                         and inliers.
-        
+
         Returns:
             OptimizeData: Data object containing optimized transformations and pivot index.
         """
-        n = len(self.homographies)
         vec = self.homography_to_vec(self.homographies)
-        init_error = self.reprojection_error(vec)
-        
-        initial_error = (init_error**2).mean() ** 0.5
+        # init_error = self.reprojection_error(vec)
+        # initial_error = (init_error**2).mean() ** 0.5
 
         res_lm = least_squares(
             self.reprojection_error, vec, method="lm", xtol=1e-6, ftol=1e-6
         )
-        optimized_error = (res_lm.fun**2).mean() ** 0.5
+        # optimized_error = (res_lm.fun**2).mean() ** 0.5
         new_vec = res_lm.x
-        
-        homographies = [
-            self.vec_to_homography(new_vec, i) for i in range(n)
-        ]
-        
-        return StitchingData(self.data.image_set, self.inliers, homographies, self.reper_idx, None)
+
+        for i, id in enumerate(self.data.image_set.order):
+            img = self.data.images[id]
+            img.homography = self.vec_to_homography(new_vec, i)
+
+        return StitchingData(self.data.image_set, self.inliers, self.reper_idx, None)

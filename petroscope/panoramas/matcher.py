@@ -1,20 +1,15 @@
-from pathlib import Path
-import gc
 import numpy as np
 import torch
-import torchvision
-from PIL import Image
 import kornia.feature as KF
-import cv2
 
-from classes import ImageStructure, ImageSet, StitchingData, MatchStructure
+from classes import TileSet, StitchingData, Match
 
 
 class Matcher:
     def __init__(self, device: str) -> None:
         """
         Initialize the Matcher with a specified device.
-        
+
         Args:
             device: The device to be used for matching operations (e.g., 'cpu' or 'cuda').
         """
@@ -22,26 +17,26 @@ class Matcher:
         self.matcher = KF.LoFTR(pretrained="outdoor").to(self.device)
         self.size = np.array((600, 400))
 
-    def match(self, imageSet : ImageSet, batch_size=10) -> 'MatchStructure':
+    def match(self, tile_set: TileSet, batch_size=10) -> Match:
         """
         Match features between images to find correspondences.
-        
+
         Args:
             img_paths: List of file paths to the images to be matched.
-            
+
         Returns:
             MatchesData: Data object containing matching information between images.
         """
-        n = len(imageSet.order)
+        n = len(tile_set.order)
 
         batch1 = []
         batch2 = []
         for i in range(n - 1):
             for j in range(i + 1, n):
-                id_i = imageSet.order[i]
-                id_j = imageSet.order[j]
-                tensor_i = imageSet.images[id_i].ImageGrayscaleDownscaled
-                tensor_j = imageSet.images[id_j].ImageGrayscaleDownscaled
+                id_i = tile_set.order[i]
+                id_j = tile_set.order[j]
+                tensor_i = tile_set.images[id_i].ImageGrayscaleDownscaled
+                tensor_j = tile_set.images[id_j].ImageGrayscaleDownscaled
                 batch1.append(tensor_i)
                 batch2.append(tensor_j)
         batch1 = torch.cat(batch1)
@@ -65,10 +60,7 @@ class Matcher:
                 "keypoints1": correspondences["keypoints1"].detach().cpu(),
                 "confidence": correspondences["confidence"].detach().cpu(),
             }
-            # del correspondences
-            # torch.cuda.empty_cache()
-            # gc.collect()
-            
+
             for i in range(batch_size):
                 idx = batch["batch_indexes"] == i
                 if not idx.any():  # мб баг
@@ -84,14 +76,14 @@ class Matcher:
         for i in range(n - 1):
             for j in range(i + 1, n):
                 corrs = loftr_results.pop(0)
-                id_i = imageSet.order[i]
-                id_j = imageSet.order[j]
-                xy_i = corrs[idx, 0:2] * imageSet.images[id_i].orig_size / self.size
-                xy_j = corrs[idx, 2:4] * imageSet.images[id_j].orig_size / self.size
+                id_i = tile_set.order[i]
+                id_j = tile_set.order[j]
+                xy_i = corrs[idx, 0:2] * tile_set.images[id_i].orig_size / self.size
+                xy_j = corrs[idx, 2:4] * tile_set.images[id_j].orig_size / self.size
                 conf = corrs[idx, 4]
                 matches.extend([
-                    MatchStructure(i, j, xy_i[idx], xy_j[idx], conf[idx])
+                    Match(i, j, xy_i[idx], xy_j[idx], conf[idx])
                     for idx in range(corrs.shape[0])
                 ])
 
-        return StitchingData(imageSet, matches, None, None, None)
+        return StitchingData(tile_set, matches, None, None)

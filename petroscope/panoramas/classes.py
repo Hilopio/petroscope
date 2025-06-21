@@ -6,11 +6,12 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import cv2
 
+
 @dataclass
-class ImageStruct:
+class Tile:
     """
     Data class to store information about an individual image used in stitching.
-    
+
     Attributes:
         id (int): Unique identifier for the image.
         img_path (Path): File path to the image.
@@ -18,18 +19,20 @@ class ImageStruct:
         orig_size (np.ndarray): Original dimensions of the image.
         gain (np.ndarray): Gain coefficients for color channels.
     """
-    id : int
-    img_path : Path
-    _image : np.ndarray
-    orig_size : np.ndarray
-    gain : np.ndarray
+    id: int
+    img_path: Path
+    _image: np.ndarray
+    orig_size: np.ndarray
+    homography: np.ndarray
+    gain: np.ndarray
 
     @property
     def image(self) -> np.ndarray:
         """
-        Property to access the image data. If the image is not already loaded, it reads the image from the specified file path,
-        converts it to a numpy array with float values in the RGB color space, normalized to the range [0, 1].
-        
+        Property to access the image data. If the image is not already loaded, it reads the image from the specified
+        file path and converts it to a numpy array with float values in the RGB color space, normalized to the range
+        [0, 1].
+
         Returns:
             np.ndarray: The loaded image as a numpy array with values in the range [0, 1].
         """
@@ -40,10 +43,11 @@ class ImageStruct:
     @property
     def image_compensated(self) -> np.ndarray:
         """
-        Property to access the gain-compensated image data. If the image is not already loaded, it reads the image from the specified file path,
-        converts it to a numpy array with float values in the RGB color space, normalized to the range [0, 1], and applies gain compensation
-        using the stored gain coefficients for each color channel.
-        
+        Property to access the gain-compensated image data. If the image is not already loaded, it reads the image
+        from the specified file path, converts it to a numpy array with float values in the RGB color space,
+        normalized to the range [0, 1], and applies gain compensation using the stored gain coefficients for each
+        color channel.
+
         Returns:
             np.ndarray: The gain-compensated image as a numpy array with values adjusted by the gain coefficients.
         """
@@ -54,10 +58,11 @@ class ImageStruct:
     @property
     def image_grayscale_downscaled(self) -> np.ndarray:
         """
-        Property to access a grayscale, downscaled version of the image. If the image is not already loaded, it reads the image from the specified file path,
-        converts it to a numpy array with float values in the RGB color space, normalized to the range [0, 1]. Then, it converts the image to grayscale and
-        resizes it to 600x400 pixels using Lanczos interpolation for high-quality downscaling.
-        
+        Property to access a grayscale, downscaled version of the image. If the image is not already loaded, it reads
+        the image from the specified file path, converts it to a numpy array with float values in the RGB color space,
+        normalized to the range [0, 1]. Then, it converts the image to grayscale and resizes it to 600x400 pixels
+        using Lanczos interpolation for high-quality downscaling.
+
         Returns:
             np.ndarray: The grayscale, downscaled image as a numpy array.
         """
@@ -67,23 +72,25 @@ class ImageStruct:
         grayscale = cv2.resize(grayscale, (600, 400), interpolation=cv2.INTER_LANCZOS4)
         return grayscale
 
+
 @dataclass
-class ImageSet:
+class TileSet:
     """
     Data class to store a set of images with their processing order.
-    
+
     Attributes:
         order (list[int]): List of image IDs representing the processing order.
         images (dict[int, ImageStructure]): Dictionary mapping image IDs to their ImageStructure objects.
     """
-    order : list[int]
-    images : dict[int, ImageStruct]
+    order: list[int]
+    images: dict[int, Tile]
+
 
 @dataclass
-class MatchStruct:
+class Match:
     """
     Data class to store information about matches between two images.
-    
+
     Attributes:
         i (int): Index of the first image.
         j (int): Index of the second image.
@@ -91,17 +98,18 @@ class MatchStruct:
         xy_j (np.ndarray): Coordinates of matching points in the second image.
         conf (float): Confidence score of the matches.
     """
-    i : int
-    j : int
-    xy_i : np.ndarray
-    xy_j : np.ndarray
-    conf : float
+    i: int
+    j: int
+    xy_i: np.ndarray
+    xy_j: np.ndarray
+    conf: float
+
 
 @dataclass
 class StitchingData:
     """
     Data class to store data required for stitching images into a panorama.
-    
+
     Attributes:
         images (list[ImageStructure]): List of image structures containing image data.
         matches (list[MatchStructure]): List of match structures containing matching points between images.
@@ -109,35 +117,36 @@ class StitchingData:
         reper_id (int): Index of the reference image used for alignment.
         panorama_size (tuple): Tuple representing the size of the panorama (width, height).
     """
-    image_set : ImageSet
-    matches : list[MatchStruct]
-    homographies : list[np.ndarray]
-    reper_id : int
-    panorama_size : tuple
+    image_set: TileSet
+    matches: list[Match]
+    reper_id: int
+    panorama_size: tuple
+
 
 @dataclass
-class PanoramaData:
+class Panorama:
     """
     Data class to store the final panorama and canvas data.
-    
+
     Attributes:
         panorama (np.ndarray): Array representing the final stitched panorama image.
         canvas (np.ndarray): Array representing the canvas used for stitching.
     """
-    panorama : np.ndarray
-    canvas : np.ndarray
+    panorama: np.ndarray
+    canvas: np.ndarray
 
     def save_panorama(self, path: Path, mode: str = 'RGB') -> None:
         """
         Save the panorama image to the specified path in a high-quality format.
-        
+
         Args:
             path (Path): Path where the panorama image will be saved, including the file extension (e.g., .jpg, .png).
-            mode (str): Output mode for the image, either 'RGB' or 'RGBA'. If 'RGBA', the mask is used as the alpha channel (default: 'RGB').
-        
+            mode (str): Output mode for the image, either 'RGB' or 'RGBA'. If 'RGBA', the mask is used as the alpha
+                channel (default: 'RGB').
+
         Returns:
             None
-        
+
         Notes:
             The image is saved with a quality setting of 95 for JPEG format to balance file size and visual fidelity.
         """
@@ -154,52 +163,54 @@ class PanoramaData:
     def save_canvas(self, path: Path, colormap: str = 'viridis') -> None:
         """
         Save the canvas image to the specified path, visualizing unique values with a specified colormap.
-        
+
         Args:
             path (Path): Path where the canvas image will be saved, including the file extension (e.g., .jpg, .png).
             colormap (str): Name of the matplotlib colormap to use for visualizing unique values (default: 'viridis').
-        
+
         Returns:
             None
-        
+
         Notes:
-            The canvas values are normalized based on their unique range before applying the colormap, and the image is saved with a quality setting of 95 for JPEG format.
+            The canvas values are normalized based on their unique range before applying the colormap, and the image is
+            saved with a quality setting of 95 for JPEG format.
         """
         unique_values = np.unique(self.canvas)
         if len(unique_values) > 1:
             norm = plt.Normalize(vmin=min(unique_values), vmax=max(unique_values))
         else:
             norm = plt.Normalize(vmin=0, vmax=1)
-        
+
         cmap = cm.get_cmap(colormap)
         colored_canvas = cmap(norm(self.canvas))
         colored_canvas = (colored_canvas[:, :, :3] * 255).astype('uint8')
-        
+
         output_image = Image.fromarray(colored_canvas)
         output_image.save(path, quality=95)
-    
+
     def save_mask(self, path: Path) -> None:
         """
         Save the mask image derived from the canvas to the specified path as a grayscale image.
-        
+
         Args:
             path (Path): Path where the mask image will be saved, including the file extension (e.g., .jpg, .png).
-        
+
         Returns:
             None
-        
+
         Notes:
-            The mask is converted to a grayscale image with binary values (0 or 255) and saved with a quality setting of 95 for JPEG format.
+            The mask is converted to a grayscale image with binary values (0 or 255) and saved with a quality setting
+            of 95 for JPEG format.
         """
         mask_image = (self.mask * 255).astype('uint8')
         output_image = Image.fromarray(mask_image)
         output_image.save(path, quality=95)
-    
+
     @property
     def mask(self) -> np.ndarray:
         """
         Property to get a mask from the canvas. The mask is True where values are >= 0, False otherwise.
-        
+
         Returns:
             np.ndarray: Boolean mask array derived from the canvas.
         """
