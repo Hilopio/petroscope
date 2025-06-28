@@ -6,7 +6,7 @@ from scipy.optimize import least_squares
 class Optimizer:
     def __init__(self, data: StitchingData):
         self.data = data
-        self.inliers = data.inliers
+        self.inliers = data.matches
         self.reper_idx = data.reper_idx
         self.homographies = []
         for id in data.tile_set.order:
@@ -87,8 +87,8 @@ class Optimizer:
         # optimized_error = (res_lm.fun**2).mean() ** 0.5
         new_vec = res_lm.x
 
-        for i, id in enumerate(self.data.image_set.order):
-            img = self.data.images[id]
+        for i, id in enumerate(self.data.tile_set.order):
+            img = self.data.tile_set.images[id]
             img.homography = self.vec_to_homography(new_vec, i)
 
-        return StitchingData(self.data.image_set, self.inliers, self.reper_idx, None)
+        return self.data

@@ -10,10 +10,10 @@ save_transforms: false
 load_transforms: true
 
 dirs:
-  datasets_dir: "/home/g.nikolaev/data/metal_tiles"
-  matches_dir: "/home/g.nikolaev/data/metal_matches"
-  transforms_dir: "/home/g.nikolaev/data/metal_transforms_5"
-  panoramas_dir: "/home/g.nikolaev/data/metal_panoramas_5"
+  datasets_dir: "/home/g.nikolaev/data/tiles"
+  matches_dir: "/home/g.nikolaev/data/matches"
+  transforms_dir: "/home/g.nikolaev/data/transforms"
+  panoramas_dir: "/home/g.nikolaev/data/panoramas"
 
 graphcut:
   coarse_scale: 16

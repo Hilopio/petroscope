@@ -38,6 +38,8 @@ class Tile:
         """
         if self._image is None:
             self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
+            h, w, c = self._image.shape
+            self.orig_size = np.array((w, h))
         return self._image
 
     @property
@@ -53,7 +55,7 @@ class Tile:
         """
         if self._image is None:
             self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
-        return self._image * self.gain
+        return self._image * self.gain.astype('float32')
 
     @property
     def image_grayscale_downscaled(self) -> np.ndarray:
@@ -68,6 +70,8 @@ class Tile:
         """
         if self._image is None:
             self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
+            h, w, c = self._image.shape
+            self.orig_size = np.array((w, h))
         grayscale = cv2.cvtColor(self._image, cv2.COLOR_RGB2GRAY)
         grayscale = cv2.resize(grayscale, (600, 400), interpolation=cv2.INTER_LANCZOS4)
         return grayscale
@@ -117,10 +121,11 @@ class StitchingData:
         reper_id (int): Index of the reference image used for alignment.
         panorama_size (tuple): Tuple representing the size of the panorama (width, height).
     """
-    image_set: TileSet
+    tile_set: TileSet
     matches: list[Match]
-    reper_id: int
+    reper_idx: int
     panorama_size: tuple
+    canvas: np.ndarray
 
 
 @dataclass

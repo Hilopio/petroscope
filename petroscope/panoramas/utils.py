@@ -70,10 +70,12 @@ def _warp_mask(mask, H, panorama_size):
     warped_mask = (warped_mask == 1)
     return warped_mask
 
+
 def _warp(image, H, panorama_size):
     warped_mask = _warp_mask(np.ones(image.shape[:-1], dtype=int), H, panorama_size)
     warped_img = _warp_img(image, H, panorama_size)
     return warped_img, warped_mask
+
 
 def _warp_masked_collage(images, transforms, panorama_size, masks):
     n_images = len(images)

@@ -5,13 +5,14 @@ from tqdm.auto import tqdm
 
 from alignment import Aligner
 from utils import _warp_collage, _save, _load_transforms, _load_images, _warp_masked_collage
-from gain_compensation_functions import gain_compensation, compensate_mean_color, find_mean_color
+from petroscope.petroscope.panoramas.gain_comp_functions import gain_compensation, compensate_mean_color, find_mean_color
 from graphcut_functions import find_graphcut_mask
 from pyramid_blending import multi_band_blending
 
+
 class Stitcher:
     def __init__(self, device, align, gaincomp, graphcut, blending, save_transforms,
-                 load_transforms, datasets_dir, matches_dir, transforms_dir, 
+                 load_transforms, datasets_dir, matches_dir, transforms_dir,
                  panoramas_dir, coarse_scale, fine_scale, lane_width, levels) -> None:
 
         self.device = device
@@ -34,7 +35,6 @@ class Stitcher:
         self.lane_width = lane_width
 
         self.levels = levels
-        
 
     def stitch(self, dataset, series, aligner):
 
@@ -49,7 +49,11 @@ class Stitcher:
         # 1. Alignment or loading transforms
         if self.align:
             try:
-                img_paths = [p for p in series.iterdir() if p.suffix.lower() in ('.jpg','.jpeg','.png','.tiff','.tif')]
+                img_paths = [
+                    p
+                    for p in series.iterdir()
+                    if p.suffix.lower() in ('.jpg', '.jpeg', '.png', '.tiff', '.tif')
+                ]
                 transforms, panorama_size, img_paths = aligner.only_transforms(img_paths=img_paths)
                 logger.debug("Alignment completed")
             except Exception as e:

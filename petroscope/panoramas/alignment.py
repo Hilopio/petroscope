@@ -237,7 +237,6 @@ class Aligner:
             inl[0], inl[1] = inl[0] - idx_shift[inl[0]], inl[1] - idx_shift[inl[1]]
             real_inliers.append(inl)
         pivot -= idx_shift[pivot]
-        
 
         # recentering
         sizes = [orig_sizes[i] for i in targetIdx]
@@ -247,7 +246,7 @@ class Aligner:
             if new_pivot == pivot:
                 break
             pivot = new_pivot
-        
+
         final_transforms, init_error, optim_error = optimize(
             real_transforms, real_inliers, pivot
         )
@@ -261,7 +260,7 @@ class Aligner:
             pivot = new_pivot
         # final_transforms, _ = recentering(final_transforms, sizes)
 
-        T, panorama_size = find_translation_and_panorama_size(orig_sizes, final_transforms) # скорее всего orig_sizes -> sizes
+        T, panorama_size = find_translation_and_panorama_size(orig_sizes, final_transforms)  # скорее всего orig_sizes -> sizes
         final_transforms = [T @ H for H in final_transforms]
 
         # Проверка на адекватность размера панорамы
