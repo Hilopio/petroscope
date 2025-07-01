@@ -1,6 +1,7 @@
 from classes import StitchingData
 import numpy as np
 from scipy.optimize import least_squares
+from logger import logger, log_time
 
 
 class Optimizer:
@@ -66,6 +67,7 @@ class Optimizer:
 
         return np.array(errors)
 
+    @log_time("Bundle adjustment done for", logger)
     def bundle_adjustment(self) -> StitchingData:
         """
         Optimize the transformations using bundle adjustment to minimize reprojection error.
@@ -78,15 +80,19 @@ class Optimizer:
             OptimizeData: Data object containing optimized transformations and pivot index.
         """
         vec = self.homography_to_vec(self.homographies)
-        # init_error = self.reprojection_error(vec)
-        # initial_error = (init_error**2).mean() ** 0.5
+
+        init_error = self.reprojection_error(vec)
+        initial_error = (init_error**2).mean() ** 0.5
+        logger.debug(f"Initial error: {initial_error}")
 
         res_lm = least_squares(
             self.reprojection_error, vec, method="lm", xtol=1e-6, ftol=1e-6
         )
-        # optimized_error = (res_lm.fun**2).mean() ** 0.5
-        new_vec = res_lm.x
 
+        optimized_error = (res_lm.fun**2).mean() ** 0.5
+        logger.debug(f"Optimized error: {optimized_error}")
+
+        new_vec = res_lm.x
         for i, id in enumerate(self.data.tile_set.order):
             img = self.data.tile_set.images[id]
             img.homography = self.vec_to_homography(new_vec, i)

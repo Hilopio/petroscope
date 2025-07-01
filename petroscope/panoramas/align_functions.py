@@ -1,6 +1,7 @@
 from classes import StitchingData, Match, TileSet
 import numpy as np
 import cv2
+from logger import logger, log_time
 
 
 def find_homographies_and_inliers(
@@ -9,7 +10,8 @@ def find_homographies_and_inliers(
     confidence_threshold: float,
     min_inliers: int,
     max_inliers: int,
-    min_inliers_rate: float
+    min_inliers_rate: float,
+    reproj_tr: float
 ) -> tuple[list[list[np.ndarray | None]], list[list[Match]], np.ndarray]:
     """
     Find homographies and inliers between pairs of images based on matching points.
@@ -48,7 +50,7 @@ def find_homographies_and_inliers(
                 xy_i,
                 xy_j,
                 method=cv2.USAC_MAGSAC,
-                ransacReprojThreshold=1.0,
+                ransacReprojThreshold=reproj_tr,
             )
             if H_ij is None:
                 continue
@@ -74,6 +76,8 @@ def find_homographies_and_inliers(
             inliers_ij: list[Match] = [matches_ij[k] for k in range(len(matches_ij)) if mask[k, 0]]
             topk_inliers_ij: list[Match] = list(sorted(inliers_ij, key=lambda x: x.conf, reverse=True))[:max_inliers]
             inliers.append(topk_inliers_ij)
+
+    logger.debug(f"Found {num_inliers.sum()//2} valid inliers")
     return Hs, inliers, num_inliers
 
 
@@ -187,7 +191,10 @@ def recentering(tile_set, n_iterations):
     return homographies, reper_idx
 
 
-def matches_alignment(matches_data: StitchingData) -> StitchingData:
+@log_time("Sequential alignment done for", logger)
+def matches_alignment(matches_data: StitchingData, confidence_tr: float, min_inliers: int,
+                      max_inliers: int, min_inliers_rate: float, reproj_tr: float, n_iterations: int
+                      ) -> StitchingData:
     """
     Find homographies between images based on matching data and perform alignment.
 
@@ -201,18 +208,14 @@ def matches_alignment(matches_data: StitchingData) -> StitchingData:
     matches: list[Match] = matches_data.matches
 
     n: int = len(tile_set.images)
-    confidence_threshold: float = 0.95
-    min_inliers: int = 5
-    max_inliers: int = 30
-    min_inliers_rate: float = 0.0  # Temporary solution
-
     Hs, inliers, num_inliers = find_homographies_and_inliers(
         matches,
         n,
-        confidence_threshold,
+        confidence_tr,
         min_inliers,
         max_inliers,
-        min_inliers_rate
+        min_inliers_rate,
+        reproj_tr
     )
 
     homographies, new_idx_order, reper_idx = sequential_alignment(Hs, num_inliers)
@@ -297,6 +300,7 @@ def find_translation_and_panorama_size(tile_set: TileSet) -> tuple[np.ndarray, t
     return T, panorama_size
 
 
+@log_time("Translation and adding panorama size done for", logger)
 def translate_and_add_panorama_size(data: StitchingData) -> StitchingData:
     """
     Finalize alignment by calculating panorama size and applying translation to transformations.

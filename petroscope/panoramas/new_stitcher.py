@@ -1,7 +1,7 @@
 from pathlib import Path
 from classes import Tile, TileSet, StitchingData, Panorama
 from tqdm import tqdm
-from logger import logger
+from logger import logger, log_time
 
 from matcher import Matcher
 from align_functions import matches_alignment, translate_and_add_panorama_size
@@ -23,7 +23,7 @@ class Stitcher:
     """
     def __init__(self, matcher: Matcher, confidence_tr: float = 0.95, min_inliers: int = 5,
                  max_inliers: int = 30, min_inlier_rate: float = 0.0, reproj_tr: float = 1.0,
-                 n_recenterings: int = 5, use_bundle_adjustment: bool = True,
+                 n_recenterings: int = 5, use_bundle_adjustment: bool = True, save_mean_color: bool = True,
                  coarse_scale: int = 4, fine_scale: int = 16, lane_width: int = 200, n_levels: int = 7,
                  use_gain_comp: bool = True, use_graphcut: bool = True, use_blending: bool = True,
                  detailed_log: bool = True,
@@ -43,6 +43,7 @@ class Stitcher:
             n_levels (int): Number of levels for multi-scale processing. Defaults to 7.
         """
         self.matcher = matcher
+
         self.confidence_tr = confidence_tr
         self.min_inliers = min_inliers
         self.max_inliers = max_inliers
@@ -54,6 +55,7 @@ class Stitcher:
         self.use_gain_comp = use_gain_comp
         self.use_graphcut = use_graphcut
         self.use_blending = use_blending
+        self.save_mean_color = save_mean_color
         self.coarse_scale = coarse_scale
         self.fine_scale = fine_scale
         self.lane_width = lane_width
@@ -70,17 +72,29 @@ class Stitcher:
             ImageSet: An ImageSet object containing the order and dictionary of
                 ImageStruct objects representing the images in the directory.
         """
-        img_paths = [
-            img_p
-            for img_p in dir_path.iterdir()
-            if img_p.suffix in (".jpg", ".png", ".tiff")
-        ]
-        img_paths = sorted(img_paths)
+        try:
+            img_paths = [
+                img_p
+                for img_p in dir_path.iterdir()
+                if img_p.suffix in (".jpg", ".png", ".tiff")
+            ]
 
-        order, images = [], []
-        for id, path in enumerate(img_paths):
-            order.append(id)
-            images.append(Tile(id=id, img_path=path, _image=None, orig_size=None, homography=None, gain=None))
+            img_paths.sort(key=lambda x: x.name)
+
+            order, images = [], []
+            for id, path in enumerate(img_paths):
+                order.append(id)
+                images.append(Tile(
+                    id=id,
+                    img_path=path,
+                    inference_size=None,
+                    _image=None, orig_size=None,
+                    homography=None,
+                    gain=None
+                ))
+        except Exception as e:
+            logger.error(f"Error parsing directory: {e}")
+            return None
 
         return TileSet(order=order, images=images)
 
@@ -124,7 +138,9 @@ class Stitcher:
 
             return data
         except Exception as e:
-            raise RuntimeError(f"Alignment failed: {str(e)}")
+            # raise RuntimeError(f"Alignment failed: {str(e)}")
+            logger.error(f"Alignment failed: {str(e)}")
+            return None
 
     def _compose(self, data: StitchingData, use_gain_comp: bool = True, use_graphcut: bool = True,
                  coarse_scale: int = None, fine_scale: int = None, lane_width: int = None,
@@ -144,6 +160,8 @@ class Stitcher:
         """
         use_gain_comp = use_gain_comp if use_gain_comp is not None else self.use_gain_comp
         use_graphcut = use_graphcut if use_graphcut is not None else self.use_graphcut
+        use_blending = use_blending if use_blending is not None else self.use_blending
+
         coarse_scale = coarse_scale if coarse_scale is not None else self.coarse_scale
         fine_scale = fine_scale if fine_scale is not None else self.fine_scale
         lane_width = lane_width if lane_width is not None else self.lane_width
@@ -166,7 +184,9 @@ class Stitcher:
 
             return panorama_data
         except Exception as e:
-            raise RuntimeError(f"Composition failed: {str(e)}")
+            # raise RuntimeError(f"Composition failed: {str(e)}")
+            logger.error(f"Composition failed: {str(e)}")
+            return None
 
     def _stitch_full_pipline(self, tile_set: TileSet) -> Panorama:
         """
@@ -187,7 +207,9 @@ class Stitcher:
             panorama_data = self._compose(alignment_data)
             return panorama_data
         except Exception as e:
-            raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+            # raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+            logger.error(f"Full stitching pipeline failed: {str(e)}")
+            return None
 
     def _stitch_collage(self, tile_set: TileSet) -> Panorama:
         """
@@ -207,7 +229,9 @@ class Stitcher:
             panorama_data = make_collage(alignment_data)
             return panorama_data
         except Exception as e:
-            raise RuntimeError(f"Collage stitching failed: {str(e)}")
+            # raise RuntimeError(f"Collage stitching failed: {str(e)}")
+            logger.error(f"Collage stitching failed: {str(e)}")
+            return None
 
     def _stitch_compensated_collage(self, tile_set: TileSet) -> Panorama:
         """
@@ -229,7 +253,9 @@ class Stitcher:
             panorama_data = make_collage(data, use_gains=True)
             return panorama_data
         except Exception as e:
-            raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+            # raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+            logger.error(f"Full stitching pipeline failed: {str(e)}")
+            return None
 
     def _stitch_compensated_mosaic(self, tile_set: TileSet) -> Panorama:
         """
@@ -252,8 +278,11 @@ class Stitcher:
             panorama_data = make_mosaic(data, use_gains=True)
             return panorama_data
         except Exception as e:
-            raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+            # raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+            logger.error(f"Full stitching pipeline failed: {str(e)}")
+            return None
 
+    @log_time("Panorama done for", logger)
     def stitch(self, input_dir: Path, output_file: Path, mode: str = 'auto') -> None:
         """
         Stitch images from a directory into a panorama with the specified mode
@@ -279,31 +308,39 @@ class Stitcher:
                 panorama_data = self._stitch_full_pipline(tile_set)
             case 'collage':
                 panorama_data = self._stitch_collage(tile_set)
-            case 'gain compensated collage':
+            case 'gaincomp collage':
                 panorama_data = self._stitch_compensated_collage(tile_set)
             case 'mosaic':
                 panorama_data = self._stitch_compensated_mosaic(tile_set)
 
-        panorama_data.save_panorama(output_file)
-        if panorama_data.canvas is not None:
-            canvas_file = output_file.parent / Path('canvas.jpg')
-            panorama_data.save_canvas(canvas_file)
+        try:
+            panorama_data.save_panorama(output_file)
+        except Exception as e:
+            logger.error(f"Failed to save panorama to {output_file}: {str(e)}")
+            return
+        # if panorama_data.canvas is not None:
+        #     canvas_file = output_file.parent / Path('canvas.jpg')
+        #     panorama_data.save_canvas(canvas_file)
 
+    @log_time("Total processing time:", logger)
     def process_collection(self, input_dir: Path, output_dir: Path, mode: str = 'auto') -> None:
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-
         datasets = [d for d in input_dir.iterdir() if d.is_dir()]
+        datasets.sort(key=lambda path: path.name)
+
         with tqdm(datasets, desc="Datasets", position=0, leave=True, dynamic_ncols=True) as dataset_pbar:
             for dataset in dataset_pbar:
                 dataset_pbar.set_postfix_str(f"{dataset.name}")
-                logger.debug(f"Processing dataset: {dataset.name}")
+                logger.info(f"Processing dataset: {dataset.name}")
 
                 series_list = [s for s in dataset.iterdir() if s.is_dir()]
+                series_list.sort(key=lambda path: path.name)
                 with tqdm(series_list, desc="Series", position=1, leave=False, dynamic_ncols=True) as series_pbar:
                     for series in series_pbar:
                         series_pbar.set_postfix_str(f"{series.name}")
-                        logger.debug(f"Processing series: {series.name}")
+                        logger.info(f"Processing series: {series.name}")
 
-                        input_path = input_dir / dataset / series
-                        output_path = output_dir / dataset / Path(series.name + ".jpg")
-                        self.stitch(dataset, input_path, output_path, mode=mode)
+                        input_path = input_dir / dataset.name / series.name
+                        output_path = output_dir / dataset.name / (series.name + ".jpg")
+                        Path(output_path.parent).mkdir(parents=True, exist_ok=True)
+
+                        self.stitch(input_path, output_path, mode=mode)

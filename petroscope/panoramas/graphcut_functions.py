@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import maxflow
+from logger import logger, log_time
 
 from utils import _warp
 from classes import StitchingData
@@ -176,6 +177,7 @@ def _warp_coarse_to_fine(images, transforms, panorama_size, coarse_scale=16, fin
     return pano
 
 
+@log_time("Graphcut done for", logger)
 def apply_graphcut(
         data: StitchingData,
         use_gains: bool = True,

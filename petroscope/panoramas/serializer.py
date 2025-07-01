@@ -9,17 +9,17 @@ class Serializer:
         """
         Save a StitchingData object to the specified path.
         Metadata is saved in JSON format, and numpy arrays are saved as separate binary files using np.save.
-        
+
         Args:
             obj: The StitchingData object to serialize.
             path (Path): The directory path where the data will be saved.
         """
         if not isinstance(obj, StitchingData):
             raise ValueError("Serializer can only save StitchingData objects")
-            
+
         # Create the directory if it doesn't exist
         path.mkdir(parents=True, exist_ok=True)
-        
+
         # Prepare metadata dictionary
         metadata = {
             "type": "StitchingData",
@@ -29,37 +29,37 @@ class Serializer:
             "matches": self._serialize_matches(obj.matches, path),
             "canvas": self._save_array(obj.canvas, path / "canvas.npy")
         }
-        
+
         # Save metadata to JSON
         with open(path / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)
-    
+
     def load(self, path: Path) -> StitchingData:
         """
         Load a StitchingData object from the specified path.
         Reads metadata from JSON and numpy arrays from binary files.
-        
+
         Args:
             path (Path): The directory path from where to load the data.
-            
+
         Returns:
             StitchingData: The deserialized StitchingData object.
         """
         if not (path / "metadata.json").exists():
             raise FileNotFoundError(f"No metadata.json found in {path}")
-            
+
         # Load metadata from JSON
         with open(path / "metadata.json", "r") as f:
             metadata = json.load(f)
-            
+
         if metadata["type"] != "StitchingData":
             raise ValueError("Loaded metadata is not for a StitchingData object")
-            
+
         # Reconstruct the StitchingData object
         tile_set = self._deserialize_tile_set(metadata["tile_set"], path)
         matches = self._deserialize_matches(metadata["matches"], path)
         canvas = self._load_array(path / metadata["canvas"])
-        
+
         return StitchingData(
             tile_set=tile_set,
             matches=matches,
@@ -67,12 +67,12 @@ class Serializer:
             panorama_size=tuple(metadata["panorama_size"]),
             canvas=canvas
         )
-    
+
     def _serialize_tile_set(self, tile_set: TileSet, base_path: Path) -> dict:
         """Serialize a TileSet object."""
         tiles_path = base_path / "tiles"
         tiles_path.mkdir(exist_ok=True)
-        
+
         tiles_dict = {}
         for tile_id, tile in tile_set.images.items():
             tile_data = {
@@ -83,12 +83,12 @@ class Serializer:
                 "gain": self._save_array(tile.gain, tiles_path / f"tile_{tile_id}_gain.npy")
             }
             tiles_dict[tile_id] = tile_data
-            
+
         return {
             "order": tile_set.order,
             "images": tiles_dict
         }
-    
+
     def _deserialize_tile_set(self, tile_set_data: dict, base_path: Path) -> TileSet:
         """Deserialize a TileSet object."""
         tiles = {}
@@ -101,14 +101,14 @@ class Serializer:
                 homography=self._load_array(base_path / "tiles" / tile_data["homography"]),
                 gain=self._load_array(base_path / "tiles" / tile_data["gain"])
             )
-            
+
         return TileSet(order=tile_set_data["order"], images=tiles)
-    
+
     def _serialize_matches(self, matches: list[Match], base_path: Path) -> list:
         """Serialize a list of Match objects."""
         matches_path = base_path / "matches"
         matches_path.mkdir(exist_ok=True)
-        
+
         matches_data = []
         for idx, match in enumerate(matches):
             match_data = {
@@ -119,9 +119,9 @@ class Serializer:
                 "conf": match.conf
             }
             matches_data.append(match_data)
-            
+
         return matches_data
-    
+
     def _deserialize_matches(self, matches_data: list, base_path: Path) -> list[Match]:
         """Deserialize a list of Match objects."""
         matches = []
@@ -134,14 +134,14 @@ class Serializer:
                 conf=match_data["conf"]
             )
             matches.append(match)
-            
+
         return matches
-    
+
     def _save_array(self, arr: np.ndarray, filepath: Path) -> str:
         """Save a numpy array to a file and return the relative filepath as a string."""
         np.save(filepath, arr)
         return filepath.name
-    
+
     def _load_array(self, filepath: Path) -> np.ndarray:
         """Load a numpy array from a file."""
         return np.load(filepath)

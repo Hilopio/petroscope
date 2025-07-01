@@ -2,6 +2,7 @@ import numpy as np
 from classes import StitchingData
 from utils import _warp
 from scipy.optimize import least_squares, Bounds
+from logger import logger, log_time
 
 
 def find_mean_color(images: list[np.ndarray], gains: list[int] | None = None) -> np.ndarray:
@@ -64,7 +65,8 @@ def compute_gains(images: np.ndarray, transforms: list[np.ndarray], panorama_siz
     return gains
 
 
-def apply_gain_comp(data: StitchingData, save_mean_color: bool = True):
+@log_time("Gain compensation done for", logger)
+def apply_gain_comp(data: StitchingData, save_mean_color: bool):
     images: list[np.arrays] = []
     homographies: list[np.arrays] = []
     for id in data.tile_set.order:

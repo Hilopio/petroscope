@@ -23,6 +23,7 @@ class Tile:
     img_path: Path
     _image: np.ndarray
     orig_size: np.ndarray
+    inference_size: list
     homography: np.ndarray
     gain: np.ndarray
 
@@ -73,7 +74,7 @@ class Tile:
             h, w, c = self._image.shape
             self.orig_size = np.array((w, h))
         grayscale = cv2.cvtColor(self._image, cv2.COLOR_RGB2GRAY)
-        grayscale = cv2.resize(grayscale, (600, 400), interpolation=cv2.INTER_LANCZOS4)
+        grayscale = cv2.resize(grayscale, self.inference_size, interpolation=cv2.INTER_LANCZOS4)
         return grayscale
 
 

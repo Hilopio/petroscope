@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 from typing import List, Tuple
 from classes import StitchingData, Panorama
+from logger import logger, log_time
 
 
 def multi_band_blending(
@@ -195,6 +196,7 @@ def build_laplacian_pyramid(gaussian_pyramid):
     return laplacian_pyramid
 
 
+@log_time("Blending done for", logger)
 def apply_blending(data: StitchingData, n_levels: int = 7, use_gains: bool = True) -> Panorama:
     panorama_size = data.panorama_size
     canvas = data.canvas
