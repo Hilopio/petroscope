@@ -24,10 +24,10 @@ class Serializer:
         metadata = {
             "type": "StitchingData",
             "reper_idx": obj.reper_idx,
-            "panorama_size": obj.panorama_size,
+            "panorama_size": list(obj.panorama_size) if obj.panorama_size is not None else None,
             "tile_set": self._serialize_tile_set(obj.tile_set, path),
             "matches": self._serialize_matches(obj.matches, path),
-            "canvas": self._save_array(obj.canvas, path / "canvas.npy")
+            "canvas": self._save_array(obj.canvas, path / "canvas.npy") if obj.canvas is not None else None
         }
 
         # Save metadata to JSON
@@ -56,15 +56,30 @@ class Serializer:
             raise ValueError("Loaded metadata is not for a StitchingData object")
 
         # Reconstruct the StitchingData object
-        tile_set = self._deserialize_tile_set(metadata["tile_set"], path)
-        matches = self._deserialize_matches(metadata["matches"], path)
-        canvas = self._load_array(path / metadata["canvas"])
+        tile_set = (
+            self._deserialize_tile_set(metadata["tile_set"], path)
+            if "tile_set" in metadata
+            else TileSet(order=[], images={})
+        )
 
+        matches = self._deserialize_matches(metadata["matches"], path) if "matches" in metadata else []
+        canvas = None
+        if "canvas" in metadata and metadata["canvas"] is not None:
+            canvas_path = path / metadata["canvas"]
+            if canvas_path.exists():
+                canvas = self._load_array(canvas_path)
+
+        panorama_size = None
+        if "panorama_size" in metadata and metadata["panorama_size"] is not None:
+            panorama_size = tuple(metadata["panorama_size"])
+
+        reper_idx = metadata.get("reper_idx", 0)
+        # print('HERE')
         return StitchingData(
             tile_set=tile_set,
             matches=matches,
-            reper_idx=metadata["reper_idx"],
-            panorama_size=tuple(metadata["panorama_size"]),
+            reper_idx=reper_idx,
+            panorama_size=panorama_size,
             canvas=canvas
         )
 
@@ -74,7 +89,8 @@ class Serializer:
         tiles_path.mkdir(exist_ok=True)
 
         tiles_dict = {}
-        for tile_id, tile in tile_set.images.items():
+        for tile_id in tile_set.order:
+            tile = tile_set.images[tile_id]
             tile_data = {
                 "id": tile.id,
                 "img_path": str(tile.img_path),
@@ -98,6 +114,7 @@ class Serializer:
                 img_path=Path(tile_data["img_path"]),
                 _image=None,  # Image is not saved, will be loaded on demand
                 orig_size=np.array(tile_data["orig_size"]),
+                inference_size=[600, 400],  # Default value since it's not saved
                 homography=self._load_array(base_path / "tiles" / tile_data["homography"]),
                 gain=self._load_array(base_path / "tiles" / tile_data["gain"])
             )
@@ -116,7 +133,7 @@ class Serializer:
                 "j": match.j,
                 "xy_i": self._save_array(match.xy_i, matches_path / f"match_{idx}_xy_i.npy"),
                 "xy_j": self._save_array(match.xy_j, matches_path / f"match_{idx}_xy_j.npy"),
-                "conf": match.conf
+                "conf": float(match.conf)  # Ensure conf is a standard Python float
             }
             matches_data.append(match_data)
 
@@ -144,4 +161,4 @@ class Serializer:
 
     def _load_array(self, filepath: Path) -> np.ndarray:
         """Load a numpy array from a file."""
-        return np.load(filepath)
+        return np.load(filepath, allow_pickle=True)

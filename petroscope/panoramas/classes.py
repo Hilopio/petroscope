@@ -128,6 +128,16 @@ class StitchingData:
     panorama_size: tuple
     canvas: np.ndarray
 
+    @property
+    def images(self) -> dict[int, 'Tile']:
+        """
+        Property to access the images dictionary from the tile_set for backward compatibility.
+
+        Returns:
+            dict[int, Tile]: Dictionary mapping image IDs to their Tile objects.
+        """
+        return self.tile_set.images
+
 
 @dataclass
 class Panorama:

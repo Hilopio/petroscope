@@ -1,7 +1,6 @@
 from matcher import Matcher
 from new_stitcher import Stitcher
 from pathlib import Path
-from time import time
 import os
 import hydra
 from omegaconf import DictConfig
@@ -40,13 +39,18 @@ def main(cfg: DictConfig):
 
         n_levels=cfg.blending.n_levels,
 
-        detailed_log=cfg.log.detailed_log
+        detailed_log=cfg.log.detailed_log,
+
+        # stitching_mode=cfg.stitching_mode
     )
-    start_time = time()
+
+    # print(f"Stitching mode: {cfg.stitching_mode}")
+
     input_dir = Path(cfg.dirs.datasets_dir)
+    cache_dir = Path(cfg.dirs.cache_dir)
     output_dir = Path(cfg.dirs.panoramas_dir)
-    stitcher.process_collection(input_dir, output_dir, mode='full')
-    print(f'processed for {time() - start_time} seconds')
+
+    stitcher.process_collection(input_dir, output_dir, cache_dir, mode=cfg.stitching_mode)
 
 
 if __name__ == "__main__":

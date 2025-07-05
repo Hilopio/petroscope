@@ -1,7 +1,7 @@
 start_with: 'scratch'  # options are 'scratch', 'match', 'align', 'compose'
  
 match:
-  device:  'cuda:5'  # 'cpu'  # 
+  device:  'cuda:6'  # 'cpu'  # 
   batch_size: 10
   inference_size: [600, 400]
 
@@ -37,3 +37,5 @@ dirs:
 
 log:
   detailed_log: True
+
+stitching_mode: 'load_matches'

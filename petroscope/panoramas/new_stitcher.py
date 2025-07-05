@@ -5,12 +5,14 @@ from logger import logger, log_time
 
 from matcher import Matcher
 from align_functions import matches_alignment, translate_and_add_panorama_size
-from optimizer import Optimizer
+from new_optimizer import Optimizer
 from collage_functions import make_collage, make_mosaic
 
 from gain_comp_functions import apply_gain_comp
 from graphcut_functions import apply_graphcut
 from blending_functions import apply_blending
+
+from serializer import Serializer
 
 
 class Stitcher:
@@ -137,8 +139,8 @@ class Stitcher:
             data = translate_and_add_panorama_size(data)
 
             return data
+
         except Exception as e:
-            # raise RuntimeError(f"Alignment failed: {str(e)}")
             logger.error(f"Alignment failed: {str(e)}")
             return None
 
@@ -183,8 +185,8 @@ class Stitcher:
                 panorama_data = apply_blending(data, n_levels=n_levels, use_gains=use_gain_comp)
 
             return panorama_data
+
         except Exception as e:
-            # raise RuntimeError(f"Composition failed: {str(e)}")
             logger.error(f"Composition failed: {str(e)}")
             return None
 
@@ -207,7 +209,7 @@ class Stitcher:
             panorama_data = self._compose(alignment_data)
             return panorama_data
         except Exception as e:
-            # raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+
             logger.error(f"Full stitching pipeline failed: {str(e)}")
             return None
 
@@ -229,7 +231,7 @@ class Stitcher:
             panorama_data = make_collage(alignment_data)
             return panorama_data
         except Exception as e:
-            # raise RuntimeError(f"Collage stitching failed: {str(e)}")
+
             logger.error(f"Collage stitching failed: {str(e)}")
             return None
 
@@ -253,7 +255,7 @@ class Stitcher:
             panorama_data = make_collage(data, use_gains=True)
             return panorama_data
         except Exception as e:
-            # raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+
             logger.error(f"Full stitching pipeline failed: {str(e)}")
             return None
 
@@ -278,12 +280,37 @@ class Stitcher:
             panorama_data = make_mosaic(data, use_gains=True)
             return panorama_data
         except Exception as e:
-            # raise RuntimeError(f"Full stitching pipeline failed: {str(e)}")
+
             logger.error(f"Full stitching pipeline failed: {str(e)}")
             return None
 
+    def save_matches(self, tile_set: TileSet, output_file: Path) -> None:
+        data = self.matcher.match(tile_set)
+        Serializer().save(data, output_file)
+
+    def stitch_with_loaded_matches(self, input_file: Path) -> TileSet:
+
+        confidence_tr = self.confidence_tr
+        min_inliers = self.min_inliers
+        max_inliers = self.max_inliers
+        min_inlier_rate = self.min_inlier_rate
+        reproj_tr = self.reproj_tr
+        n_recenterings = self.n_recenterings
+
+        data = Serializer().load(input_file)
+
+        data = matches_alignment(data, confidence_tr, min_inliers, max_inliers,
+                                 min_inlier_rate, reproj_tr, n_recenterings)
+
+        data = Optimizer(data).bundle_adjustment()
+
+        data = translate_and_add_panorama_size(data)
+
+        panorama_data = make_collage(data)
+        return panorama_data
+
     @log_time("Panorama done for", logger)
-    def stitch(self, input_dir: Path, output_file: Path, mode: str = 'auto') -> None:
+    def stitch(self, input_dir: Path, output_file: Path, cache_path: Path = None, mode: str = None) -> None:
         """
         Stitch images from a directory into a panorama with the specified mode
         and save the result to a file.
@@ -302,6 +329,7 @@ class Stitcher:
                 during parsing. The output format and quality depend on the file
                 extension provided in output_file.
         """
+        # mode = self.sticthing_mode if mode is None else mode
         tile_set = self._parse_dir(input_dir)
         match mode:
             case 'full' | 'auto':
@@ -312,18 +340,21 @@ class Stitcher:
                 panorama_data = self._stitch_compensated_collage(tile_set)
             case 'mosaic':
                 panorama_data = self._stitch_compensated_mosaic(tile_set)
+            case 'save_matches':
+                self.save_matches(tile_set, cache_path / 'matches.pkl')
+                return
+            case 'load_matches':
+                panorama_data = self.stitch_with_loaded_matches(cache_path / 'matches.pkl')
 
         try:
             panorama_data.save_panorama(output_file)
         except Exception as e:
             logger.error(f"Failed to save panorama to {output_file}: {str(e)}")
             return
-        # if panorama_data.canvas is not None:
-        #     canvas_file = output_file.parent / Path('canvas.jpg')
-        #     panorama_data.save_canvas(canvas_file)
 
     @log_time("Total processing time:", logger)
-    def process_collection(self, input_dir: Path, output_dir: Path, mode: str = 'auto') -> None:
+    def process_collection(self, input_dir: Path, output_dir: Path, cache_dir: Path, mode: str = None) -> None:
+        # mode = self.sticthing_mode if mode is None else mode
         datasets = [d for d in input_dir.iterdir() if d.is_dir()]
         datasets.sort(key=lambda path: path.name)
 
@@ -341,6 +372,7 @@ class Stitcher:
 
                         input_path = input_dir / dataset.name / series.name
                         output_path = output_dir / dataset.name / (series.name + ".jpg")
+                        cache_path = cache_dir / dataset.name / series.name
                         Path(output_path.parent).mkdir(parents=True, exist_ok=True)
 
-                        self.stitch(input_path, output_path, mode=mode)
+                        self.stitch(input_path, output_path, cache_path, mode)

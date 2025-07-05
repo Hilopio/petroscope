@@ -2,6 +2,7 @@ import numpy as np
 from scipy.optimize import least_squares
 from typing import List, Tuple
 
+
 def vec_to_homography(vec: np.ndarray, i: int, pivot: int) -> np.ndarray:
     # If the index is the pivot, return the identity matrix
     if i == pivot:
