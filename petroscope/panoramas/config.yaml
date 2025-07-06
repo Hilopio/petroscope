@@ -10,7 +10,7 @@ align:
   min_inliers: 5
   max_inliers: 30
   min_inlier_rate: 0.0
-  reproj_tr: 3.0
+  reproj_tr: 1.0
   n_recenterings: 5
   use_bundle_adjustment: True
 

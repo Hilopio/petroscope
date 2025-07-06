@@ -1,36 +1,56 @@
+from matcher import Matcher
+from stitcher import Stitcher
+from pathlib import Path
 import os
 import hydra
 from omegaconf import DictConfig
-
-from stitcher import Stitcher
 
 os.environ["HYDRA_FULL_ERROR"] = "1"
 
 
 @hydra.main(version_base="1.2", config_path=".", config_name="config.yaml")
 def main(cfg: DictConfig):
-    stchr = Stitcher(
-        device = cfg.device,
-        align = cfg.stages.align,
-        gaincomp = cfg.stages.gaincomp,
-        graphcut = cfg.stages.graphcut,
-        blending = cfg.stages.blending,
-
-        save_transforms = cfg.save_transforms,
-        load_transforms = cfg.load_transforms,
-
-        datasets_dir = cfg.dirs.datasets_dir,
-        matches_dir = cfg.dirs.matches_dir,
-        transforms_dir = cfg.dirs.transforms_dir,
-        panoramas_dir = cfg.dirs.panoramas_dir,
-
-        coarse_scale = cfg.graphcut.coarse_scale,
-        fine_scale = cfg.graphcut.fine_scale,
-        lane_width = cfg.graphcut.lane_width,
-
-        levels = cfg.blending.levels,
+    matcher = Matcher(
+        cfg.match.device,
+        cfg.match.batch_size,
+        cfg.match.inference_size
     )
-    stchr.run()
+
+    stitcher = Stitcher(
+        matcher=matcher,
+
+        confidence_tr=cfg.align.confidence_tr,
+        min_inliers=cfg.align.min_inliers,
+        max_inliers=cfg.align.max_inliers,
+        min_inlier_rate=cfg.align.min_inlier_rate,
+        reproj_tr=cfg.align.reproj_tr,
+        n_recenterings=cfg.align.n_recenterings,
+        use_bundle_adjustment=cfg.align.use_bundle_adjustment,
+
+        use_gain_comp=cfg.compose.use_gain_comp,
+        use_graphcut=cfg.compose.use_graphcut,
+        use_blending=cfg.compose.use_blending,
+
+        save_mean_color=cfg.gain_comp.save_mean_color,
+
+        coarse_scale=cfg.graphcut.coarse_scale,
+        fine_scale=cfg.graphcut.fine_scale,
+        lane_width=cfg.graphcut.lane_width,
+
+        n_levels=cfg.blending.n_levels,
+
+        detailed_log=cfg.log.detailed_log,
+
+        # stitching_mode=cfg.stitching_mode
+    )
+
+    # print(f"Stitching mode: {cfg.stitching_mode}")
+
+    input_dir = Path(cfg.dirs.datasets_dir)
+    cache_dir = Path(cfg.dirs.cache_dir)
+    output_dir = Path(cfg.dirs.panoramas_dir)
+
+    stitcher.process_collection(input_dir, output_dir, cache_dir, mode=cfg.stitching_mode)
 
 
 if __name__ == "__main__":

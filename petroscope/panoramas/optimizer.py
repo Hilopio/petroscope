@@ -67,11 +67,11 @@ class Optimizer:
             first = self.project(inlier.xy_i, Hi)
             second = self.project(inlier.xy_j, Hj)
 
-            # errors.extend((first[:, 0] - second[:, 0]).tolist())
-            # errors.extend((first[:, 1] - second[:, 1]).tolist())
+            errors.extend((first[:, 0] - second[:, 0]).tolist())
+            errors.extend((first[:, 1] - second[:, 1]).tolist())
 
-            diff = first - second
-            errors.extend(np.linalg.norm(diff, axis=1).tolist())
+            # diff = first - second
+            # errors.extend(np.linalg.norm(diff, axis=1).tolist())
 
         return np.array(errors)
 
