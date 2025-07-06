@@ -41,16 +41,21 @@ class Optimizer:
 
             else:
                 H = Hs[i].reshape(-1)
-                H = H[:-1]  # Remove the last element (scale factor)
+                H = H[:-1]
                 vec[8 * (i - 1): 8 * i] = H
 
         return vec
 
     def project(self, xy, H):
-        point = np.concatenate([xy, np.array([1])])
-        new_point = np.dot(H, point)
-        new_point /= new_point[2]
-        return new_point[:2]
+        n_matches = xy.shape[0]  # xy is a n_matches x 2 array
+        project_points = np.concatenate([xy, np.ones((n_matches, 1))], axis=1)
+
+        assert project_points.shape == (n_matches, 3)
+
+        new_points = H @ project_points.T
+        new_points /= new_points[2]
+
+        return new_points[:2, :].T
 
     def reprojection_error(self, X: np.ndarray) -> np.ndarray:
         errors = []
@@ -62,8 +67,11 @@ class Optimizer:
             first = self.project(inlier.xy_i, Hi)
             second = self.project(inlier.xy_j, Hj)
 
-            errors.append(first[0] - second[0])
-            errors.append(first[1] - second[1])
+            # errors.extend((first[:, 0] - second[:, 0]).tolist())
+            # errors.extend((first[:, 1] - second[:, 1]).tolist())
+
+            diff = first - second
+            errors.extend(np.linalg.norm(diff, axis=1).tolist())
 
         return np.array(errors)
 

@@ -5,7 +5,7 @@ from logger import logger, log_time
 
 from matcher import Matcher
 from align_functions import matches_alignment, translate_and_add_panorama_size
-from new_optimizer import Optimizer
+from optimizer import Optimizer
 from collage_functions import make_collage, make_mosaic
 
 from gain_comp_functions import apply_gain_comp
@@ -235,6 +235,28 @@ class Stitcher:
             logger.error(f"Collage stitching failed: {str(e)}")
             return None
 
+    def _stitch_collage_no_optimize(self, tile_set: TileSet) -> Panorama:
+        """
+        Create a collage-style panorama from input images with minimal blending.
+        Args:
+            images (ImageSet): Set of images to be stitched into a collage,
+                containing image data and processing order.
+        Returns:
+            PanoramaData: Data object representing the stitched collage panorama
+                with the composed image and canvas.
+        Raises:
+            RuntimeError: If any step in the collage stitching process
+                (alignment or collage creation) fails.
+        """
+        try:
+            alignment_data = self._align(tile_set, use_bundle_adjustment=False)
+            panorama_data = make_collage(alignment_data)
+            return panorama_data
+        except Exception as e:
+
+            logger.error(f"Collage stitching failed: {str(e)}")
+            return None
+
     def _stitch_compensated_collage(self, tile_set: TileSet) -> Panorama:
         """
         Perform the full stitching pipeline to create a seamless panorama from
@@ -345,6 +367,10 @@ class Stitcher:
                 return
             case 'load_matches':
                 panorama_data = self.stitch_with_loaded_matches(cache_path / 'matches.pkl')
+            case 'collage_no_optimize':
+                panorama_data = self._stitch_collage_no_optimize(tile_set)
+            case _:
+                raise ValueError(f"Invalid mode: {mode}")
 
         try:
             panorama_data.save_panorama(output_file)

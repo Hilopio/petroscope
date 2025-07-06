@@ -102,16 +102,18 @@ class Matcher:
             for j in range(i + 1, n):
                 corrs = loftr_results[result_index]
                 result_index += 1
-                id_i: int = tile_set.order[i]
-                id_j: int = tile_set.order[j]
-                idx: np.ndarray = np.arange(corrs.shape[0])
-                xy_i: np.ndarray = corrs[idx, 0:2] * tile_set.images[id_i].orig_size / self.inference_size
-                xy_j: np.ndarray = corrs[idx, 2:4] * tile_set.images[id_j].orig_size / self.inference_size
-                conf: np.ndarray = corrs[idx, 4]
-                matches.extend([
-                    Match(id_i, id_j, xy_i[k], xy_j[k], conf[k])
-                    for k in range(corrs.shape[0])
-                ])
+                id_i = tile_set.order[i]
+                id_j = tile_set.order[j]
+                # idx: np.ndarray = np.arange(corrs.shape[0])
+                xy_i = corrs[:, 0:2] * tile_set.images[id_i].orig_size / self.inference_size
+                xy_j = corrs[:, 2:4] * tile_set.images[id_j].orig_size / self.inference_size
+                conf = corrs[:, 4]
+                # print(conf.shape)
+                # matches.extend([
+                #     Match(id_i, id_j, xy_i[k], xy_j[k], conf[k])
+                #     for k in range(corrs.shape[0])
+                # ])
+                matches.append(Match(id_i, id_j, xy_i, xy_j, conf))
 
         return StitchingData(
             tile_set=tile_set,

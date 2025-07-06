@@ -107,7 +107,7 @@ class Match:
     j: int
     xy_i: np.ndarray
     xy_j: np.ndarray
-    conf: float
+    conf: np.ndarray
 
 
 @dataclass

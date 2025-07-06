@@ -32,21 +32,23 @@ def find_homographies_and_inliers(
             - np.ndarray: Matrix of the number of inliers for each image pair.
     """
 
-    inliers: list[list[Match]] = []
+    inliers: list[Match] = []
     Hs: list[list[np.ndarray | None]] = [[None] * n for _ in range(n)]
     num_inliers: np.ndarray = np.zeros((n, n), dtype=int)
 
-    filtered_matches: list[Match] = list(filter(lambda x: x.conf > confidence_threshold, matches))
     for i in range(n - 1):
         for j in range(i + 1, n):
-            matches_ij: list[Match] = list(filter(lambda x: x.i == i and x.j == j, filtered_matches))
+            matches_ij = matches.pop(0)
+            conf_mask = matches_ij.conf > confidence_threshold
+            xy_i = matches_ij.xy_i[conf_mask]
+            xy_j = matches_ij.xy_j[conf_mask]
+            conf = matches_ij.conf[conf_mask]
 
-            if len(matches_ij) < min_inliers:
+            num_matches_ij = xy_i.shape[0]
+            if num_matches_ij < min_inliers:
                 continue
 
-            xy_i: np.ndarray = np.array([m.xy_i for m in matches_ij])
-            xy_j: np.ndarray = np.array([m.xy_j for m in matches_ij])
-            H_ij, mask = cv2.findHomography(
+            H_ij, ransac_mask = cv2.findHomography(
                 xy_i,
                 xy_j,
                 method=cv2.USAC_MAGSAC,
@@ -55,16 +57,16 @@ def find_homographies_and_inliers(
             if H_ij is None:
                 continue
 
-            num: int = mask.sum()
+            num_inliers_ij = ransac_mask.sum()
 
-            if num < min_inliers:
+            if num_inliers_ij < min_inliers:
                 continue
 
-            if num / len(matches_ij) < min_inliers_rate:
+            if num_inliers_ij / num_matches_ij < min_inliers_rate:
                 continue
 
-            num_inliers[i][j] = num
-            num_inliers[j][i] = num
+            num_inliers[i][j] = num_inliers_ij
+            num_inliers[j][i] = num_inliers_ij
 
             Hs[i][j] = H_ij
             try:
@@ -73,11 +75,26 @@ def find_homographies_and_inliers(
             except np.linalg.LinAlgError:
                 assert False, "Singular homography matrix"
 
-            inliers_ij: list[Match] = [matches_ij[k] for k in range(len(matches_ij)) if mask[k, 0]]
-            topk_inliers_ij: list[Match] = list(sorted(inliers_ij, key=lambda x: x.conf, reverse=True))[:max_inliers]
-            inliers.append(topk_inliers_ij)
+            ransac_mask = ransac_mask.squeeze(1).astype(bool)
+            xy_i = xy_i[ransac_mask]
+            xy_j = xy_j[ransac_mask]
+            conf = conf[ransac_mask]
 
-    logger.debug(f"Found {num_inliers.sum()//2} valid inliers")
+            # idxs = np.argsort(conf)[::-1][:max_inliers]
+            # xy_i = xy_i[idxs]
+            # xy_j = xy_j[idxs]
+            # conf = conf[idxs]
+
+            if conf.shape[0] > max_inliers:
+                topk_indices = np.argpartition(conf, -max_inliers)[-max_inliers:]
+                xy_i = xy_i[topk_indices]
+                xy_j = xy_j[topk_indices]
+                conf = conf[topk_indices]
+
+            inliers_ij = Match(i, j, xy_i, xy_j, conf)
+            inliers.append(inliers_ij)
+
+    logger.debug(f"Found {num_inliers.sum() // 2} valid inliers")
     return Hs, inliers, num_inliers
 
 
@@ -104,7 +121,7 @@ def sequential_alignment(
     target_idx: list[int] = []
     outliers_idx: list[int] = []
 
-    reper_idx: int = int(np.argmax(num_inliers.sum(axis=1)))
+    reper_idx = np.argmax(num_inliers.sum(axis=1))
 
     target_idx.append(reper_idx)
     query_idx.remove(reper_idx)
@@ -207,7 +224,7 @@ def matches_alignment(matches_data: StitchingData, confidence_tr: float, min_inl
     tile_set: TileSet = matches_data.tile_set
     matches: list[Match] = matches_data.matches
 
-    n: int = len(tile_set.images)
+    n = len(tile_set.images)
     Hs, inliers, num_inliers = find_homographies_and_inliers(
         matches,
         n,
@@ -219,9 +236,6 @@ def matches_alignment(matches_data: StitchingData, confidence_tr: float, min_inl
     )
 
     homographies, new_idx_order, reper_idx = sequential_alignment(Hs, num_inliers)
-
-    # outliers_mask: list[int] = [1 if i not in new_idx_order else 0 for i in range(n)]
-    # idx_shift: np.ndarray = np.cumsum(outliers_mask)
 
     homographies = [homographies[idx] for idx in new_idx_order]  # if homographies[i] is not None
     tile_set.order = [tile_set.order[idx] for idx in new_idx_order]
@@ -237,11 +251,21 @@ def matches_alignment(matches_data: StitchingData, confidence_tr: float, min_inl
             inlier.xy_j,
             inlier.conf
         )
-        # for inlier in inliers
-        for sublist in inliers for inlier in sublist
+        for inlier in inliers
         if inlier.i in new_idx_order and inlier.j in new_idx_order
     ]
-    # reper_idx -= idx_shift[reper_idx]
+    # inliers = [
+    #     Match(
+    #         reverse_permute[inlier.i],
+    #         reverse_permute[inlier.j],
+    #         inlier.xy_i,
+    #         inlier.xy_j,
+    #         inlier.conf
+    #     )
+    #     # for inlier in inliers
+    #     for sublist in inliers for inlier in sublist
+    #     if inlier.i in new_idx_order and inlier.j in new_idx_order
+    # ]
     reper_idx = reverse_permute[reper_idx]
 
     n_iterations: int = 25
@@ -277,26 +301,30 @@ def find_translation_and_panorama_size(tile_set: TileSet) -> tuple[np.ndarray, t
         sizes.append(img.orig_size)
         homographies.append(img.homography)
 
-    x_coords: list[float] = []
-    y_coords: list[float] = []
+    x_coords, y_coords = [], []
     for (w, h), H in zip(sizes, homographies):
         assert H is not None, "Homography matrix should not be None"
-        corners: np.ndarray = np.array([[0, 0, 1], [0, h, 1], [w, 0, 1], [w, h, 1]])
-        new_corners: np.ndarray = H @ corners.T
+        corners = np.array([
+            [0, 0, 1],
+            [0, h, 1],
+            [w, 0, 1],
+            [w, h, 1]
+        ])
+        new_corners = H @ corners.T
         new_corners /= new_corners[2]
         x_coords.extend(new_corners[0].tolist())
         y_coords.extend(new_corners[1].tolist())
 
-    x_min: float = np.min(x_coords)
-    x_max: float = np.max(x_coords)
-    y_min: float = np.min(y_coords)
-    y_max: float = np.max(y_coords)
+    x_min, x_max = np.min(x_coords), np.max(x_coords)
+    y_min, y_max = np.min(y_coords), np.max(y_coords)
 
-    T: np.ndarray = np.array([[1, 0, -x_min],
-                              [0, 1, -y_min],
-                              [0, 0, 1]])
+    T = np.array([
+        [1, 0, -x_min],
+        [0, 1, -y_min],
+        [0, 0, 1]
+    ])
 
-    panorama_size: tuple[int, int] = (int(np.ceil(x_max - x_min)), int(np.ceil(y_max - y_min)))
+    panorama_size = (int(np.ceil(x_max - x_min)), int(np.ceil(y_max - y_min)))
     return T, panorama_size
 
 
@@ -311,11 +339,10 @@ def translate_and_add_panorama_size(data: StitchingData) -> StitchingData:
     Returns:
         StitchingData: Updated data object with final transformations, panorama size, and other alignment data.
     """
-    tile_set: TileSet = data.tile_set
+    tile_set = data.tile_set
     T, panorama_size = find_translation_and_panorama_size(tile_set)
     for id in tile_set.order:
         img = tile_set.images[id]
-        # if img.homography is not None:
         img.homography = T @ img.homography
 
     return StitchingData(
