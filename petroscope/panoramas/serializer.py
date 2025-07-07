@@ -9,6 +9,7 @@ class Serializer:
         """
         Save a StitchingData object to the specified path.
         Metadata is saved in JSON format, and numpy arrays are saved as separate binary files using np.save.
+        If the directory already exists, it will be deleted along with all its contents before being recreated.
 
         Args:
             obj: The StitchingData object to serialize.
@@ -17,7 +18,12 @@ class Serializer:
         if not isinstance(obj, StitchingData):
             raise ValueError("Serializer can only save StitchingData objects")
 
-        # Create the directory if it doesn't exist
+        # If the directory exists, delete it along with all contents
+        if path.exists():
+            import shutil
+            shutil.rmtree(path, ignore_errors=True)
+
+        # Create a new empty directory
         path.mkdir(parents=True, exist_ok=True)
 
         # Prepare metadata dictionary
@@ -74,7 +80,6 @@ class Serializer:
             panorama_size = tuple(metadata["panorama_size"])
 
         reper_idx = metadata.get("reper_idx", 0)
-        # print('HERE')
         return StitchingData(
             tile_set=tile_set,
             matches=matches,
@@ -133,7 +138,7 @@ class Serializer:
                 "j": match.j,
                 "xy_i": self._save_array(match.xy_i, matches_path / f"match_{idx}_xy_i.npy"),
                 "xy_j": self._save_array(match.xy_j, matches_path / f"match_{idx}_xy_j.npy"),
-                "conf": float(match.conf)  # Ensure conf is a standard Python float
+                "conf": self._save_array(match.conf, matches_path / f"match_{idx}_conf.npy")
             }
             matches_data.append(match_data)
 
@@ -148,7 +153,7 @@ class Serializer:
                 j=match_data["j"],
                 xy_i=self._load_array(base_path / "matches" / match_data["xy_i"]),
                 xy_j=self._load_array(base_path / "matches" / match_data["xy_j"]),
-                conf=match_data["conf"]
+                conf=self._load_array(base_path / "matches" / match_data["conf"])
             )
             matches.append(match)
 
