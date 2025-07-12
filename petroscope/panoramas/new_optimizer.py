@@ -28,17 +28,20 @@ class PanoramaOptimizer(nn.Module):
             homos.append(params)
         self.homographies = nn.Parameter(torch.stack(homos))  # [num_images, 8]
 
-        # Параметры камеры: fx, fy, cx, cy, skew, k1, k2, k3, p1, p2
+        # Параметры камеры: f (для fx и fy), cx, cy, k1, k2
         # Разделяем на группы с разными learning rates
         self.cam_params_group1 = nn.Parameter(
-            torch.tensor(initial_cam_params[:2], dtype=torch.float64, device=device)
-        )  # fx, fy
+            torch.tensor(initial_cam_params[0:1], dtype=torch.float64, device=device)
+        )  # f (для fx и fy)
         self.cam_params_group2 = nn.Parameter(
             torch.tensor(initial_cam_params[2:4], dtype=torch.float64, device=device)
         )  # cx, cy
         self.cam_params_group3 = nn.Parameter(
-            torch.tensor(initial_cam_params[4:], dtype=torch.float64, device=device)
-        )  # skew, k1, k2, k3, p1, p2
+            torch.tensor(initial_cam_params[5:6], dtype=torch.float64, device=device)
+        )  # k1
+        self.cam_params_group4 = nn.Parameter(
+            torch.tensor(initial_cam_params[6:7], dtype=torch.float64, device=device)
+        )  # k2
 
     def forward(self, matches):
         loss = 0.0
@@ -53,16 +56,23 @@ class PanoramaOptimizer(nn.Module):
             pts_j_proj = self.apply_homography(H_j, pts_j)
 
             pts_i_dist = self.distort_points(
-                pts_i_proj, self.cam_params_group1, self.cam_params_group2, self.cam_params_group3
+                pts_i_proj, self.cam_params_group1, self.cam_params_group2, 
+                self.cam_params_group3, self.cam_params_group4
             )
             pts_j_dist = self.distort_points(
-                pts_j_proj, self.cam_params_group1, self.cam_params_group2, self.cam_params_group3
+                pts_j_proj, self.cam_params_group1, self.cam_params_group2, 
+                self.cam_params_group3, self.cam_params_group4
             )
 
             diff = pts_i_dist - pts_j_dist
 
             conf = torch.tensor(m.conf, dtype=torch.float64, device=device)
-            weighted_diff = diff * conf  # учитываем confidence
+            # Ensure conf can be broadcasted to match diff's shape (N, 2)
+            if conf.dim() == 1:
+                conf = conf.unsqueeze(1)  # Shape (N, 1)
+            elif conf.dim() > 2:
+                conf = conf.view(-1, 1)  # Flatten to (N, 1) if needed
+            weighted_diff = diff * conf  # учитываем confidence with broadcasting
             loss += (weighted_diff**2).sum()
         return loss
 
@@ -86,18 +96,23 @@ class PanoramaOptimizer(nn.Module):
         pts_trans = (H @ pts_h.t()).t()
         return pts_trans[:, :2] / pts_trans[:, 2:3]
 
-    def distort_points(self, pts, cam_params_group1, cam_params_group2, cam_params_group3):
-        fx, fy = cam_params_group1
+    def distort_points(self, pts, cam_params_group1, cam_params_group2, cam_params_group3, cam_params_group4):
+        f = cam_params_group1[0]  # f используется для fx и fy
         cx, cy = cam_params_group2
-        skew, k1, k2, k3, p1, p2 = cam_params_group3
-        x = (pts[:, 0] - cx - skew * (pts[:, 1] - cy)) / fx
-        y = (pts[:, 1] - cy) / fy
+        k1 = cam_params_group3[0]
+        k2 = cam_params_group4[0]
+        skew = 0.0  # зафиксировано на 0
+        k3 = 0.0    # зафиксировано на 0
+        p1 = 0.0    # зафиксировано на 0
+        p2 = 0.0    # зафиксировано на 0
+        x = (pts[:, 0] - cx - skew * (pts[:, 1] - cy)) / f
+        y = (pts[:, 1] - cy) / f
         r2 = x**2 + y**2
         radial = 1 + k1*r2 + k2*r2**2 + k3*r2**3
         x_dist = x * radial + 2*p1*x*y + p2*(r2 + 2*x**2)
         y_dist = y * radial + p1*(r2 + 2*y**2) + 2*p2*x*y
-        x_pix = fx * x_dist + cx + skew * (fy * y_dist)
-        y_pix = fy * y_dist + cy
+        x_pix = f * x_dist + cx + skew * (f * y_dist)
+        y_pix = f * y_dist + cy
         return torch.stack([x_pix, y_pix], dim=1)
 
     def fix_reference_homography(self):
@@ -112,10 +127,11 @@ def optimize(homographies, matches, fixed_idx, initial_cam_params, n_iters=100, 
 
     # Define parameter groups with different learning rates
     param_groups = [
-        {'params': model.cam_params_group1, 'lr': 1e2},  # fx, fy
-        {'params': model.cam_params_group2, 'lr': 1e1},   # cx, cy
-        {'params': model.cam_params_group3, 'lr': 1e-2},  # skew, k1, k2, k3, p1, p2
-        {'params': model.homographies, 'lr': 1e-5}        # homography parameters
+        {'params': model.cam_params_group1, 'lr': 1e2},  # f (для fx и fy)
+        {'params': model.cam_params_group2, 'lr': 1e1},  # cx, cy
+        {'params': model.cam_params_group3, 'lr': 1e-2},  # k1
+        {'params': model.cam_params_group4, 'lr': 1e-2},  # k2
+        {'params': model.homographies, 'lr': 1e-5}       # homography parameters
     ]
     optimizer = optim.Adam(param_groups)
 
@@ -130,7 +146,10 @@ def optimize(homographies, matches, fixed_idx, initial_cam_params, n_iters=100, 
 
     optimized_homos = [model.get_H(i).detach().cpu().numpy() for i in range(model.num_images)]
     optimized_cam = torch.cat([
-        model.cam_params_group1, model.cam_params_group2, model.cam_params_group3
+        model.cam_params_group1, model.cam_params_group1, model.cam_params_group2, 
+        torch.tensor([0.0], dtype=torch.float64, device=device),  # skew
+        model.cam_params_group3, model.cam_params_group4,
+        torch.tensor([0.0, 0.0, 0.0], dtype=torch.float64, device=device)  # k3, p1, p2
     ]).detach().cpu().numpy()
     return optimized_homos, optimized_cam
 
@@ -150,8 +169,8 @@ class Optimizer:
         id = self.data.tile_set.order[0]
         w, h = self.data.tile_set.images[id].orig_size
 
-        # Параметры камеры: fx, fy, cx, cy, skew, k1, k2, k3, p1, p2
-        # initial_cam_params = [1.2 * w, 1.2 * h, w / 2, h / 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        # Параметры камеры: f (для fx и fy), cx, cy, skew, k1, k2, k3, p1, p2
+        # Начальные значения: f, cx, cy, skew=0, k1, k2, k3=0, p1=0, p2=0
         initial_cam_params = [40_000, 40_000, w / 2, h / 2, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 
         model = PanoramaOptimizer(self.homographies, self.reper_idx, initial_cam_params)
