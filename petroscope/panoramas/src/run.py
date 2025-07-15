@@ -12,7 +12,7 @@ os.environ["HYDRA_FULL_ERROR"] = "1"
 def main(cfg: DictConfig):
     matcher = Matcher(
         cfg.match.device,
-        cfg.match.weights,
+        cfg.match.matcher_weights,
         cfg.match.batch_size,
         cfg.match.inference_size
     )

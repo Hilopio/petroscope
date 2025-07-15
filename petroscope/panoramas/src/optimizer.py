@@ -58,7 +58,7 @@ class Optimizer:
         return new_points[:2, :].T
 
     def reprojection_error(self, X: np.ndarray) -> np.ndarray:
-        errors = []
+        all_errors = []
         for inlier in self.inliers:
 
             Hi = self.vec_to_homography(X, inlier.i)
@@ -67,13 +67,17 @@ class Optimizer:
             first = self.project(inlier.xy_i, Hi)
             second = self.project(inlier.xy_j, Hj)
 
-            errors.extend((first[:, 0] - second[:, 0]).tolist())
-            errors.extend((first[:, 1] - second[:, 1]).tolist())
+            diff = (first - second)
+            reproj_error = np.sum(diff ** 2, axis=1) ** 0.5
+            all_errors.append(reproj_error)
+
+            # errors.extend((first[:, 0] - second[:, 0]).tolist())
+            # errors.extend((first[:, 1] - second[:, 1]).tolist())
 
             # diff = first - second
             # errors.extend(np.linalg.norm(diff, axis=1).tolist())
 
-        return np.array(errors)
+        return np.concatenate(all_errors)
 
     @log_time("Bundle adjustment done for", logger)
     def bundle_adjustment(self) -> StitchingData:

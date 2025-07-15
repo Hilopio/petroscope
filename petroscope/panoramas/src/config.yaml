@@ -39,4 +39,4 @@ dirs:
 log:
   detailed_log: True
 
-stitching_mode: 'load_matches'
+stitching_mode: 'collage'
