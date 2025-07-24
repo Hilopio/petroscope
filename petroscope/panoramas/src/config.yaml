@@ -39,4 +39,8 @@ dirs:
 log:
   detailed_log: True
 
-stitching_mode: 'collage'
+vizualization:
+  draw_inliers: True
+
+# stitching_mode: 'save_matches'
+stitching_mode: 'load_matches_draw_inliers'

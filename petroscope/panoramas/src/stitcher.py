@@ -6,7 +6,7 @@ from logger import logger, log_time
 from matcher import Matcher
 from align_functions import matches_alignment, translate_and_add_panorama_size
 from optimizer import Optimizer
-from collage_functions import make_collage, make_mosaic
+from collage_functions import make_collage, make_mosaic, make_collage_with_inliers
 
 from gain_comp_functions import apply_gain_comp
 from graphcut_functions import apply_graphcut
@@ -28,7 +28,7 @@ class Stitcher:
                  n_recenterings: int = 5, use_bundle_adjustment: bool = True, save_mean_color: bool = True,
                  coarse_scale: int = 4, fine_scale: int = 16, lane_width: int = 200, n_levels: int = 7,
                  use_gain_comp: bool = True, use_graphcut: bool = True, use_blending: bool = True,
-                 detailed_log: bool = True,
+                 detailed_log: bool = True, draw_inliers: bool = False
                  ) -> None:
         """
         Initialize the Stitcher with a matcher object and configuration parameters.
@@ -331,6 +331,27 @@ class Stitcher:
         panorama_data = make_collage(data)
         return panorama_data
 
+    def _stitch_with_loaded_matches_draw_inliers(self, input_file: Path) -> TileSet:
+
+        confidence_tr = self.confidence_tr
+        min_inliers = self.min_inliers
+        max_inliers = self.max_inliers
+        min_inlier_rate = self.min_inlier_rate
+        reproj_tr = self.reproj_tr
+        n_recenterings = self.n_recenterings
+
+        data = Serializer().load(input_file)
+
+        data = matches_alignment(data, confidence_tr, min_inliers, max_inliers,
+                                 min_inlier_rate, reproj_tr, n_recenterings)
+
+        data = Optimizer(data).bundle_adjustment()
+
+        data = translate_and_add_panorama_size(data)
+
+        panorama_data = make_collage_with_inliers(data)
+        return panorama_data
+
     @log_time("Panorama done for", logger)
     def stitch(self, input_dir: Path, output_file: Path, cache_path: Path = None, mode: str = None) -> None:
         """
@@ -369,6 +390,8 @@ class Stitcher:
                 panorama_data = self.stitch_with_loaded_matches(cache_path / 'matches.pkl')
             case 'collage_no_optimize':
                 panorama_data = self._stitch_collage_no_optimize(tile_set)
+            case 'load_matches_draw_inliers':
+                panorama_data = self._stitch_with_loaded_matches_draw_inliers(cache_path / 'matches.pkl')
             case _:
                 raise ValueError(f"Invalid mode: {mode}")
 

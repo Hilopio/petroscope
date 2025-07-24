@@ -42,6 +42,8 @@ def main(cfg: DictConfig):
 
         detailed_log=cfg.log.detailed_log,
 
+        draw_inliers=cfg.vizualization.draw_inliers,
+
         # stitching_mode=cfg.stitching_mode
     )
 
