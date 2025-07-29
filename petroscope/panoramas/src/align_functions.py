@@ -58,6 +58,7 @@ def find_homographies_and_inliers(
                 continue
 
             num_inliers_ij = ransac_mask.sum()
+            # print(num_inliers_ij)
 
             if num_inliers_ij < min_inliers:
                 continue

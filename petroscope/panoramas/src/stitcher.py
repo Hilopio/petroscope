@@ -78,7 +78,7 @@ class Stitcher:
             img_paths = [
                 img_p
                 for img_p in dir_path.iterdir()
-                if img_p.suffix in (".jpg", ".png", ".tiff")
+                if img_p.suffix in (".jpg", ".png", ".tiff", ".TIF")
             ]
 
             img_paths.sort(key=lambda x: x.name)

@@ -46,7 +46,7 @@ def make_collage_with_inliers(
     use_gains=False,
     borderValue=0,
     line_color=(0, 255, 0),  # BGR format for OpenCV (зеленый по умолчанию)
-    line_thickness=2,
+    line_thickness=10,
     point_color=(255, 0, 0),  # BGR format for OpenCV (синий по умолчанию)
     point_radius=5,
     point_thickness=-1  # -1 для заливки, положительное число для контура
