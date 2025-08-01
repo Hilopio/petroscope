@@ -20,6 +20,7 @@ def main(cfg: DictConfig):
     stitcher = Stitcher(
         matcher=matcher,
 
+        transformation_type=cfg.align.transformation_type,
         confidence_tr=cfg.align.confidence_tr,
         min_inliers=cfg.align.min_inliers,
         max_inliers=cfg.align.max_inliers,

@@ -1,10 +1,11 @@
 match:
-  device:  'cuda:6'  # 'cpu'  # 
+  device:  'cuda:5'  # 'cpu'  # 
   batch_size: 10
   inference_size: [600, 400]
   matcher_weights: '/home/g.nikolaev/petroscope/petroscope/panoramas/weights/loftr_outdoor.ckpt'
 
 align:
+  transformation_type: 'projective'  # 'affine' or 'projective'
   confidence_tr: 0.95
   min_inliers: 5
   max_inliers: 30
@@ -40,5 +41,5 @@ log:
 vizualization:
   draw_inliers: True
 
-stitching_mode: 'save_matches'
+stitching_mode: 'load_matches'
 # stitching_mode: 'load_matches_draw_inliers'

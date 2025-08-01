@@ -23,7 +23,8 @@ class Stitcher:
     like homography estimation, bundle adjustment, gain compensation, graphcut, and
     blending.
     """
-    def __init__(self, matcher: Matcher, confidence_tr: float = 0.95, min_inliers: int = 5,
+    def __init__(self, matcher: Matcher, transformation_type: str = "projective",
+                 confidence_tr: float = 0.95, min_inliers: int = 5,
                  max_inliers: int = 30, min_inlier_rate: float = 0.0, reproj_tr: float = 1.0,
                  n_recenterings: int = 5, use_bundle_adjustment: bool = True, save_mean_color: bool = True,
                  coarse_scale: int = 4, fine_scale: int = 16, lane_width: int = 200, n_levels: int = 7,
@@ -46,6 +47,7 @@ class Stitcher:
         """
         self.matcher = matcher
 
+        self.transformation_type = transformation_type
         self.confidence_tr = confidence_tr
         self.min_inliers = min_inliers
         self.max_inliers = max_inliers
@@ -100,7 +102,8 @@ class Stitcher:
 
         return TileSet(order=order, images=images)
 
-    def _align(self, tile_set: TileSet, confidence_tr: bool = None, min_inliers: int = None,
+    def _align(self, tile_set: TileSet, transformation_type: str = None,
+               confidence_tr: bool = None, min_inliers: int = None,
                max_inliers: int = None, min_inlier_rate: float = None, reproj_tr: float = None,
                n_recenterings: int = None, use_bundle_adjustment: bool = None, detailed_log: bool = None
                ) -> StitchingData:
@@ -116,6 +119,7 @@ class Stitcher:
             RuntimeError: If the alignment process fails due to issues in
                 matching, homography estimation, or bundle adjustment.
         """
+        transformation_type = transformation_type if transformation_type is not None else self.transformation_type
         confidence_tr = confidence_tr if confidence_tr is not None else self.confidence_tr
         min_inliers = min_inliers if min_inliers is not None else self.min_inliers
         max_inliers = max_inliers if max_inliers is not None else self.max_inliers
@@ -130,11 +134,13 @@ class Stitcher:
 
             data = self.matcher.match(tile_set)
 
-            data = matches_alignment(data, confidence_tr, min_inliers, max_inliers,
-                                     min_inlier_rate, reproj_tr, n_recenterings)
+            data = matches_alignment(
+                data, transformation_type, confidence_tr,
+                min_inliers, max_inliers, min_inlier_rate, reproj_tr, n_recenterings
+            )
 
             if use_bundle_adjustment:
-                data = Optimizer(data).bundle_adjustment()
+                data = Optimizer(transformation_type, data).bundle_adjustment()
 
             data = translate_and_add_panorama_size(data)
 
@@ -312,6 +318,7 @@ class Stitcher:
 
     def stitch_with_loaded_matches(self, input_file: Path) -> TileSet:
 
+        transformation_type = self.transformation_type
         confidence_tr = self.confidence_tr
         min_inliers = self.min_inliers
         max_inliers = self.max_inliers
@@ -321,10 +328,12 @@ class Stitcher:
 
         data = Serializer().load(input_file)
 
-        data = matches_alignment(data, confidence_tr, min_inliers, max_inliers,
-                                 min_inlier_rate, reproj_tr, n_recenterings)
+        data = matches_alignment(
+            data, transformation_type, confidence_tr, min_inliers,
+            max_inliers, min_inlier_rate, reproj_tr, n_recenterings
+        )
 
-        data = Optimizer(data).bundle_adjustment()
+        data = Optimizer(transformation_type, data).bundle_adjustment()
 
         data = translate_and_add_panorama_size(data)
 
@@ -333,6 +342,7 @@ class Stitcher:
 
     def _stitch_with_loaded_matches_draw_inliers(self, input_file: Path) -> TileSet:
 
+        transformation_type = self.transformation_type
         confidence_tr = self.confidence_tr
         min_inliers = self.min_inliers
         max_inliers = self.max_inliers
@@ -342,10 +352,12 @@ class Stitcher:
 
         data = Serializer().load(input_file)
 
-        data = matches_alignment(data, confidence_tr, min_inliers, max_inliers,
-                                 min_inlier_rate, reproj_tr, n_recenterings)
+        data = matches_alignment(
+            data, transformation_type, confidence_tr, min_inliers,
+            max_inliers, min_inlier_rate, reproj_tr, n_recenterings
+        )
 
-        data = Optimizer(data).bundle_adjustment()
+        data = Optimizer(transformation_type, data).bundle_adjustment()
 
         data = translate_and_add_panorama_size(data)
 

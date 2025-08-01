@@ -69,6 +69,7 @@ def undistort_image(image_path, camera_matrix, dist_coeffs, output_path=None):
     return output_path
 
 
+transformation_type = 'projective'
 confidence_tr = 0.95
 min_inliers = 5
 max_inliers = 200
@@ -94,11 +95,11 @@ for series in input_dir.iterdir():
 
         data = Serializer().load(cache_dir / series.name / 'matches.pkl')
         data = matches_alignment(
-            data, confidence_tr, min_inliers, max_inliers,
-            min_inlier_rate, reproj_tr, n_recenterings
+            data, transformation_type, confidence_tr, min_inliers,
+            max_inliers, min_inlier_rate, reproj_tr, n_recenterings
         )
 
-        optimizer = DistortionOptimizer(data, f=f, cx=cx, cy=cy)
+        optimizer = DistortionOptimizer(device=device, data=data, f=f, cx=cx, cy=cy)
 
         lr_f = 1239.9967836846104
         lr_c = 3.585612610345396

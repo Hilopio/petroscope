@@ -7,6 +7,7 @@ from logger import logger, log_time
 def find_homographies_and_inliers(
     matches: list[Match],
     n: int,
+    transformation_type: str,
     confidence_threshold: float,
     min_inliers: int,
     max_inliers: int,
@@ -48,17 +49,29 @@ def find_homographies_and_inliers(
             if num_matches_ij < min_inliers:
                 continue
 
-            H_ij, ransac_mask = cv2.findHomography(
-                xy_i,
-                xy_j,
-                method=cv2.USAC_MAGSAC,
-                ransacReprojThreshold=reproj_tr,
-            )
+            match transformation_type:
+                case 'affine':
+                    H_ij, ransac_mask = cv2.estimateAffine2D(
+                        xy_i,
+                        xy_j,
+                        # method=cv2.RANSAC,
+                        method=cv2.USAC_MAGSAC,
+                        ransacReprojThreshold=reproj_tr
+                    )
+                case 'projective':
+                    H_ij, ransac_mask = cv2.findHomography(
+                        xy_i,
+                        xy_j,
+                        method=cv2.USAC_MAGSAC,
+                        ransacReprojThreshold=reproj_tr,
+                    )
+                case _:
+                    raise ValueError(f"Unknown transformation type: {transformation_type}")
+
             if H_ij is None:
                 continue
 
             num_inliers_ij = ransac_mask.sum()
-            # print(num_inliers_ij)
 
             if num_inliers_ij < min_inliers:
                 continue
@@ -80,11 +93,6 @@ def find_homographies_and_inliers(
             xy_i = xy_i[ransac_mask]
             xy_j = xy_j[ransac_mask]
             conf = conf[ransac_mask]
-
-            # idxs = np.argsort(conf)[::-1][:max_inliers]
-            # xy_i = xy_i[idxs]
-            # xy_j = xy_j[idxs]
-            # conf = conf[idxs]
 
             if conf.shape[0] > max_inliers:
                 topk_indices = np.argpartition(conf, -max_inliers)[-max_inliers:]
@@ -210,7 +218,7 @@ def recentering(tile_set, n_iterations):
 
 
 @log_time("Sequential alignment done for", logger)
-def matches_alignment(matches_data: StitchingData, confidence_tr: float, min_inliers: int,
+def matches_alignment(matches_data: StitchingData, transformation_type: str, confidence_tr: float, min_inliers: int,
                       max_inliers: int, min_inliers_rate: float, reproj_tr: float, n_iterations: int
                       ) -> StitchingData:
     """
@@ -229,6 +237,7 @@ def matches_alignment(matches_data: StitchingData, confidence_tr: float, min_inl
     Hs, inliers, num_inliers = find_homographies_and_inliers(
         matches,
         n,
+        transformation_type,
         confidence_tr,
         min_inliers,
         max_inliers,
@@ -255,18 +264,6 @@ def matches_alignment(matches_data: StitchingData, confidence_tr: float, min_inl
         for inlier in inliers
         if inlier.i in new_idx_order and inlier.j in new_idx_order
     ]
-    # inliers = [
-    #     Match(
-    #         reverse_permute[inlier.i],
-    #         reverse_permute[inlier.j],
-    #         inlier.xy_i,
-    #         inlier.xy_j,
-    #         inlier.conf
-    #     )
-    #     # for inlier in inliers
-    #     for sublist in inliers for inlier in sublist
-    #     if inlier.i in new_idx_order and inlier.j in new_idx_order
-    # ]
     reper_idx = reverse_permute[reper_idx]
 
     n_iterations: int = 25

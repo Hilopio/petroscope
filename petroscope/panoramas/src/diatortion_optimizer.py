@@ -10,10 +10,9 @@ from classes import StitchingData
 
 
 class DistortionOptimizer:
-    def __init__(self, data: StitchingData, f=10000.0, cx=0.0, cy=0.0, k1=0.0, k2=0.0, k3=0.0, p1=0.0, p2=0.0):
+    def __init__(self, device, data: StitchingData, f=10000.0, cx=0.0, cy=0.0, k1=0.0, k2=0.0, k3=0.0, p1=0.0, p2=0.0):
 
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+        self.device = device
         self.seed = 42
         random.seed(self.seed)
         np.random.seed(self.seed)
