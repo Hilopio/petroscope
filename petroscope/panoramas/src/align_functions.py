@@ -51,13 +51,14 @@ def find_homographies_and_inliers(
 
             match transformation_type:
                 case 'affine':
-                    H_ij, ransac_mask = cv2.estimateAffine2D(
+                    M, ransac_mask = cv2.estimateAffine2D(
                         xy_i,
                         xy_j,
                         # method=cv2.RANSAC,
                         method=cv2.USAC_MAGSAC,
                         ransacReprojThreshold=reproj_tr
                     )
+                    H_ij = np.vstack([M, [0, 0, 1]])
                 case 'projective':
                     H_ij, ransac_mask = cv2.findHomography(
                         xy_i,
