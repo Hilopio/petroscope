@@ -48,7 +48,6 @@ def find_homographies_and_inliers(
             num_matches_ij = xy_i.shape[0]
             if num_matches_ij < min_inliers:
                 continue
-            print('====================')
             match transformation_type:
                 case 'affine':
                     M, ransac_mask = cv2.estimateAffine2D(
@@ -59,8 +58,6 @@ def find_homographies_and_inliers(
                         ransacReprojThreshold=reproj_tr
                     )
                     H_ij = np.vstack([M, [0, 0, 1]])
-                    print(H_ij.shape)
-
                 case 'projective':
                     H_ij, ransac_mask = cv2.findHomography(
                         xy_i,
