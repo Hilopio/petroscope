@@ -87,7 +87,7 @@ def find_homographies_and_inliers(
                 Hs[j][i] = np.linalg.inv(H_ij)
                 Hs[j][i] /= Hs[j][i][2, 2]
             except np.linalg.LinAlgError:
-                assert False, "Singular homography matrix"
+                assert False, f"Singular homography matrix {H_ij}"
 
             ransac_mask = ransac_mask.squeeze(1).astype(bool)
             xy_i = xy_i[ransac_mask]
