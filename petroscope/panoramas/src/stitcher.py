@@ -25,7 +25,7 @@ class Stitcher:
     """
     def __init__(self, matcher: Matcher, transformation_type: str = "projective",
                  confidence_tr: float = 0.95, min_inliers: int = 5,
-                 max_inliers: int = 30, min_inlier_rate: float = 0.0, reproj_tr: float = 1.0,
+                 max_inliers: int = 200, min_inlier_rate: float = 0.0, reproj_tr: float = 10.0,
                  n_recenterings: int = 5, use_bundle_adjustment: bool = True, save_mean_color: bool = True,
                  coarse_scale: int = 4, fine_scale: int = 16, lane_width: int = 200, n_levels: int = 7,
                  use_gain_comp: bool = True, use_graphcut: bool = True, use_blending: bool = True,
