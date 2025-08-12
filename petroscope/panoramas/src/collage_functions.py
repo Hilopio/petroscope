@@ -25,8 +25,9 @@ def make_collage(data: StitchingData, use_gains=False) -> Panorama:
             images.append(img.image)
         homographies.append(img.homography)
 
+    c = 1 if images[0].ndim == 2 else images[0].shape[2]
     w, h = data.panorama_size
-    panorama = np.full(shape=(h, w, 3), fill_value=borderValue, dtype='float32')
+    panorama = np.full(shape=(h, w, c), fill_value=borderValue, dtype='float32')
 
     for image, H in zip(images, homographies):
         cv2.warpPerspective(

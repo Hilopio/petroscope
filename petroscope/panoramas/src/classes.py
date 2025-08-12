@@ -39,7 +39,10 @@ class Tile:
         """
         if self._image is None:
             self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
-            h, w, c = self._image.shape
+
+            h, w = self._image.shape[:2]
+            # c = 1 if self._image.ndim == 2 else self._image.shape[2]
+
             self.orig_size = np.array((w, h))
         return self._image
 
@@ -71,11 +74,17 @@ class Tile:
         """
         if self._image is None:
             self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
-            h, w, c = self._image.shape
+
+        h, w = self._image.shape[:2]
+        c = 1 if self._image.ndim == 2 else self._image.shape[2]
+
+        if self.orig_size is None:
             self.orig_size = np.array((w, h))
-        grayscale = cv2.cvtColor(self._image, cv2.COLOR_RGB2GRAY)
-        grayscale = cv2.resize(grayscale, self.inference_size, interpolation=cv2.INTER_LANCZOS4)
-        return grayscale
+
+        grayscale = cv2.cvtColor(self._image, cv2.COLOR_RGB2GRAY) if c == 3 else self._image
+        downscale = cv2.resize(grayscale, self.inference_size, interpolation=cv2.INTER_LANCZOS4)
+
+        return downscale
 
 
 @dataclass

@@ -1,11 +1,14 @@
 from pathlib import Path
-from classes import Tile, TileSet, StitchingData, Panorama
 from tqdm import tqdm
+import shutil
 from logger import logger, log_time
+
+from classes import Tile, TileSet, StitchingData, Panorama
 
 from matcher import Matcher
 from align_functions import matches_alignment, translate_and_add_panorama_size
 from optimizer import Optimizer
+from distortion_optimizer import DistortionOptimizer
 from collage_functions import make_collage, make_mosaic, make_collage_with_inliers
 
 from gain_comp_functions import apply_gain_comp
@@ -13,6 +16,8 @@ from graphcut_functions import apply_graphcut
 from blending_functions import apply_blending
 
 from serializer import Serializer
+
+from utils import undistort_dir
 
 
 class Stitcher:
@@ -45,6 +50,7 @@ class Stitcher:
             lane_width (int): Width of the lane for stitching. Defaults to 200.
             n_levels (int): Number of levels for multi-scale processing. Defaults to 7.
         """
+        self.device = matcher.device
         self.matcher = matcher
 
         self.transformation_type = transformation_type
@@ -364,6 +370,96 @@ class Stitcher:
         panorama_data = make_collage_with_inliers(data)
         return panorama_data
 
+    def _undistort_and_stitch_collage(
+        self,
+        input_dir: Path,
+        tmp_dir: Path,
+        matches_dir: Path = None
+    ) -> TileSet:
+
+        transformation_type = self.transformation_type
+        confidence_tr = self.confidence_tr
+        min_inliers = self.min_inliers
+        max_inliers = self.max_inliers
+        min_inlier_rate = self.min_inlier_rate
+        reproj_tr = self.reproj_tr
+        n_recenterings = self.n_recenterings
+
+        lr_f: float = 1239.9967836846104
+        lr_c: float = 3.585612610345396
+        lr_k1: float = 0.07556810141274425
+        lr_k2: float = 0.001260466458564947
+        lr_k3: float = 5.727904470799619e-07
+        lr_p: float = 0.0003795853142670637
+        h_gamma: float = 0.9
+        d_gamma: float = 0.9
+
+        if matches_dir is not None:
+            data = Serializer().load(matches_dir)
+        else:
+            data = self.matcher.match(input_dir)
+
+        data = matches_alignment(
+            data, transformation_type, confidence_tr, min_inliers,
+            max_inliers, min_inlier_rate, reproj_tr, n_recenterings
+        )
+
+        f = 1e4
+        some_id = data.tile_set.order[0]
+        w, h = data.tile_set.images[some_id].orig_size
+        cx, cy = w // 2, h // 2
+
+        d_optimizer = DistortionOptimizer('affine', self.device, data, f=f, cx=cx, cy=cy)
+        try:
+            data = d_optimizer.bundle_adjustment(
+                lr_f=lr_f,
+                lr_c=lr_c,
+                lr_k1=lr_k1,
+                lr_k2=lr_k2,
+                lr_k3=lr_k3,
+                lr_p=lr_p,
+                h_gamma=h_gamma,
+                d_gamma=d_gamma,
+                max_iter=400,
+                verbose='none'
+            )
+        except Exception as e:
+            print(f"Affine bundle adjustment failed: {e}")
+
+        affine_cm = d_optimizer.get_camera_matrix_batch().squeeze().cpu().detach().numpy()
+        affine_dp = d_optimizer.get_distortion_params_batch().cpu().detach().numpy()[:, :5]
+        try:
+            undistort_dir(
+                input_dir=input_dir,
+                output_dir=tmp_dir,
+                camera_matrix=affine_cm,
+                distortion_params=affine_dp
+            )
+        except Exception as e:
+            print(f"Affine undistortion failed: {e}")
+
+        tile_set = self._parse_dir(tmp_dir)
+        try:
+            data = self._align(
+                tile_set=tile_set,
+                transformation_type=transformation_type,
+                confidence_tr=confidence_tr,
+                min_inliers=min_inliers,
+                max_inliers=max_inliers,
+                min_inlier_rate=min_inlier_rate,
+                reproj_tr=reproj_tr,
+                n_recenterings=n_recenterings,
+            )
+        except Exception as e:
+            print(f"Affine stitching failed: {e}")
+        finally:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir)
+
+        panorama_data = make_collage(data)
+
+        return panorama_data
+
     @log_time("Panorama done for", logger)
     def stitch(self, input_dir: Path, output_file: Path, cache_path: Path = None, mode: str = None) -> None:
         """
@@ -386,6 +482,7 @@ class Stitcher:
         """
         # mode = self.sticthing_mode if mode is None else mode
         tile_set = self._parse_dir(input_dir)
+        matches_dir = cache_path / 'matches.pkl'
         match mode:
             case 'full' | 'auto':
                 panorama_data = self._stitch_full_pipline(tile_set)
@@ -396,14 +493,17 @@ class Stitcher:
             case 'mosaic':
                 panorama_data = self._stitch_compensated_mosaic(tile_set)
             case 'save_matches':
-                self.save_matches(tile_set, cache_path / 'matches.pkl')
+                self.save_matches(tile_set, matches_dir)
                 return
             case 'load_matches':
-                panorama_data = self.stitch_with_loaded_matches(cache_path / 'matches.pkl')
+                panorama_data = self.stitch_with_loaded_matches(matches_dir)
             case 'collage_no_optimize':
                 panorama_data = self._stitch_collage_no_optimize(tile_set)
             case 'load_matches_draw_inliers':
-                panorama_data = self._stitch_with_loaded_matches_draw_inliers(cache_path / 'matches.pkl')
+                panorama_data = self._stitch_with_loaded_matches_draw_inliers(matches_dir)
+            case 'undistort_and_stitch_collage':
+                tmp_dir = cache_path / 'undistorted_temp'
+                panorama_data = self._undistort_and_stitch_collage(input_dir, tmp_dir, matches_dir)
             case _:
                 raise ValueError(f"Invalid mode: {mode}")
 

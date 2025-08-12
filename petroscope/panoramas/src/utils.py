@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 from PIL import Image
 import pickle
+import shutil
+from pathlib import Path
 
 borderValue = 0.0
 
@@ -84,3 +86,37 @@ def _warp_masked_collage(images, transforms, panorama_size, masks):
         warped_img = _warp_img(images[i], transforms[i], panorama_size)
         panorama = np.where(masks[i], warped_img, panorama)
     return panorama
+
+
+def undistort_dir(
+    input_dir: Path,
+    output_dir: Path,
+    camera_matrix: np.ndarray,
+    distortion_params: np.ndarray
+):
+    """Undistort images in input_dir and save to output_dir"""
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    img_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff', '*.TIF']
+    images = []
+    for ext in img_extensions:
+        images.extend(input_dir.glob(ext))
+
+    for img_path in images:
+        img = cv2.imread(str(img_path))
+        if img is None:
+            print(f"Failed to read {img_path}, skipping.")
+            continue
+
+        h, w = img.shape[:2]
+        new_camera_mtx, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, distortion_params, (w, h), alpha=0)
+        mapx, mapy = cv2.initUndistortRectifyMap(
+            camera_matrix, distortion_params, None, new_camera_mtx, (roi[2], roi[3]), cv2.CV_32FC1
+        )
+        undistorted_roi = cv2.remap(img, mapx, mapy, interpolation=cv2.INTER_LINEAR)
+        undistorted = cv2.resize(undistorted_roi, (w, h), interpolation=cv2.INTER_LINEAR)
+
+        out_path = output_dir / img_path.name
+        cv2.imwrite(str(out_path), undistorted)
