@@ -96,8 +96,9 @@ class Matcher:
 
             for i in range(batch_size):
                 idx = batch_result["batch_indexes"] == i
-                if not idx.any():  # Possible bug in batch processing
-                    break
+                if not idx.any():
+                    loftr_results.append(np.empty((0, 5)))
+                    continue
                 kp0 = batch_result["keypoints0"][idx]
                 kp1 = batch_result["keypoints1"][idx]
                 conf = batch_result["confidence"][idx]
@@ -108,10 +109,13 @@ class Matcher:
         inference_size = np.array(inference_size)
         matches: list[Match] = []
         result_index = 0
+
         for i in range(n - 1):
             for j in range(i + 1, n):
                 corrs = loftr_results[result_index]
                 result_index += 1
+                if corrs.shape[0] == 0:
+                    continue
                 id_i = tile_set.order[i]
                 id_j = tile_set.order[j]
                 xy_i = corrs[:, 0:2] * tile_set.images[id_i].orig_size / self.inference_size

@@ -138,7 +138,7 @@ class StitchingData:
     canvas: np.ndarray
 
     @property
-    def images(self) -> dict[int, 'Tile']:
+    def images(self) -> dict[int, Tile]:
         """
         Property to access the images dictionary from the tile_set for backward compatibility.
 
@@ -182,6 +182,10 @@ class Panorama:
                 image = np.dstack((image, alpha))
             else:
                 image[:, :, 3] = alpha
+
+        c = 1 if image.ndim == 2 else image.shape[2]
+        if c == 1:
+            image = image.squeeze(-1)
         output_image = Image.fromarray(image)
         output_image.save(path, quality=95)
 

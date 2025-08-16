@@ -37,71 +37,75 @@ def find_homographies_and_inliers(
     Hs: list[list[np.ndarray | None]] = [[None] * n for _ in range(n)]
     num_inliers: np.ndarray = np.zeros((n, n), dtype=int)
 
-    for i in range(n - 1):
-        for j in range(i + 1, n):
-            matches_ij = matches.pop(0)
-            conf_mask = matches_ij.conf > confidence_threshold
-            xy_i = matches_ij.xy_i[conf_mask]
-            xy_j = matches_ij.xy_j[conf_mask]
-            conf = matches_ij.conf[conf_mask]
+    # for i in range(n - 1):
+    #     for j in range(i + 1, n):
+    #         matches_ij = matches.pop(0)
 
-            num_matches_ij = xy_i.shape[0]
-            if num_matches_ij < min_inliers:
-                continue
-            match transformation_type:
-                case 'affine':
-                    M, ransac_mask = cv2.estimateAffine2D(
-                        xy_i,
-                        xy_j,
-                        # method=cv2.RANSAC,
-                        method=cv2.USAC_MAGSAC,
-                        ransacReprojThreshold=reproj_tr
-                    )
-                    H_ij = np.vstack([M, [0, 0, 1]])
-                case 'projective':
-                    H_ij, ransac_mask = cv2.findHomography(
-                        xy_i,
-                        xy_j,
-                        method=cv2.USAC_MAGSAC,
-                        ransacReprojThreshold=reproj_tr,
-                    )
-                case _:
-                    raise ValueError(f"Unknown transformation type: {transformation_type}")
+    for matches_ij in matches:
+        i = matches_ij.i
+        j = matches_ij.j
+        conf_mask = matches_ij.conf > confidence_threshold
+        xy_i = matches_ij.xy_i[conf_mask]
+        xy_j = matches_ij.xy_j[conf_mask]
+        conf = matches_ij.conf[conf_mask]
 
-            if H_ij is None:
-                continue
+        num_matches_ij = xy_i.shape[0]
+        if num_matches_ij < min_inliers:
+            continue
+        match transformation_type:
+            case 'affine':
+                M, ransac_mask = cv2.estimateAffine2D(
+                    xy_i,
+                    xy_j,
+                    # method=cv2.RANSAC,
+                    method=cv2.USAC_MAGSAC,
+                    ransacReprojThreshold=reproj_tr
+                )
+                H_ij = np.vstack([M, [0, 0, 1]])
+            case 'projective':
+                H_ij, ransac_mask = cv2.findHomography(
+                    xy_i,
+                    xy_j,
+                    method=cv2.USAC_MAGSAC,
+                    ransacReprojThreshold=reproj_tr,
+                )
+            case _:
+                raise ValueError(f"Unknown transformation type: {transformation_type}")
 
-            num_inliers_ij = ransac_mask.sum()
+        if H_ij is None:
+            continue
 
-            if num_inliers_ij < min_inliers:
-                continue
+        num_inliers_ij = ransac_mask.sum()
 
-            if num_inliers_ij / num_matches_ij < min_inliers_rate:
-                continue
+        if num_inliers_ij < min_inliers:
+            continue
 
-            num_inliers[i][j] = num_inliers_ij
-            num_inliers[j][i] = num_inliers_ij
+        if num_inliers_ij / num_matches_ij < min_inliers_rate:
+            continue
 
-            Hs[i][j] = H_ij
-            try:
-                Hs[j][i] = np.linalg.inv(H_ij)
-                Hs[j][i] /= Hs[j][i][2, 2]
-            except np.linalg.LinAlgError:
-                assert False, f"Singular homography matrix {H_ij}"
+        num_inliers[i][j] = num_inliers_ij
+        num_inliers[j][i] = num_inliers_ij
 
-            ransac_mask = ransac_mask.squeeze(1).astype(bool)
-            xy_i = xy_i[ransac_mask]
-            xy_j = xy_j[ransac_mask]
-            conf = conf[ransac_mask]
+        Hs[i][j] = H_ij
+        try:
+            Hs[j][i] = np.linalg.inv(H_ij)
+            Hs[j][i] /= Hs[j][i][2, 2]
+        except np.linalg.LinAlgError:
+            assert False, f"Singular homography matrix {H_ij}"
 
-            if conf.shape[0] > max_inliers:
-                topk_indices = np.argpartition(conf, -max_inliers)[-max_inliers:]
-                xy_i = xy_i[topk_indices]
-                xy_j = xy_j[topk_indices]
-                conf = conf[topk_indices]
+        ransac_mask = ransac_mask.squeeze(1).astype(bool)
+        xy_i = xy_i[ransac_mask]
+        xy_j = xy_j[ransac_mask]
+        conf = conf[ransac_mask]
 
-            inliers_ij = Match(i, j, xy_i, xy_j, conf)
-            inliers.append(inliers_ij)
+        if conf.shape[0] > max_inliers:
+            topk_indices = np.argpartition(conf, -max_inliers)[-max_inliers:]
+            xy_i = xy_i[topk_indices]
+            xy_j = xy_j[topk_indices]
+            conf = conf[topk_indices]
+
+        inliers_ij = Match(i, j, xy_i, xy_j, conf)
+        inliers.append(inliers_ij)
 
     logger.debug(f"Found {num_inliers.sum() // 2} valid inliers")
     return Hs, inliers, num_inliers

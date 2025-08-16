@@ -1,5 +1,4 @@
 from pathlib import Path
-from tqdm import tqdm
 import shutil
 from logger import logger, log_time
 
@@ -28,13 +27,13 @@ class Stitcher:
     like homography estimation, bundle adjustment, gain compensation, graphcut, and
     blending.
     """
-    def __init__(self, matcher: Matcher, transformation_type: str = "projective",
+    def __init__(self, matcher: Matcher, load_matches: bool = False, transformation_type: str = "projective",
                  confidence_tr: float = 0.95, min_inliers: int = 5,
-                 max_inliers: int = 200, min_inlier_rate: float = 0.0, reproj_tr: float = 10.0,
-                 n_recenterings: int = 5, use_bundle_adjustment: bool = True, save_mean_color: bool = True,
+                 max_inliers: int = 30, min_inlier_rate: float = 0.0, reproj_tr: float = 1.0,
+                 n_recenterings: int = 5, use_BA: bool = True, save_mean_color: bool = True,
                  coarse_scale: int = 4, fine_scale: int = 16, lane_width: int = 200, n_levels: int = 7,
                  use_gain_comp: bool = True, use_graphcut: bool = True, use_blending: bool = True,
-                 detailed_log: bool = True, draw_inliers: bool = False
+                 detailed_log: bool = True, draw_inliers: bool = False, stitching_mode: str = "collage"
                  ) -> None:
         """
         Initialize the Stitcher with a matcher object and configuration parameters.
@@ -53,6 +52,8 @@ class Stitcher:
         self.device = matcher.device
         self.matcher = matcher
 
+        self.load_matches = load_matches
+
         self.transformation_type = transformation_type
         self.confidence_tr = confidence_tr
         self.min_inliers = min_inliers
@@ -60,7 +61,7 @@ class Stitcher:
         self.min_inlier_rate = min_inlier_rate
         self.reproj_tr = reproj_tr
         self.n_recenterings = n_recenterings
-        self.use_bundle_adjustment = use_bundle_adjustment
+        self.use_BA = use_BA
 
         self.use_gain_comp = use_gain_comp
         self.use_graphcut = use_graphcut
@@ -72,6 +73,8 @@ class Stitcher:
         self.n_levels = n_levels
 
         self.detailed_log = detailed_log
+        self.draw_inliers = draw_inliers
+        self.stitching_mode = stitching_mode
 
     def _parse_dir(self, dir_path: Path) -> TileSet:
         """
@@ -98,7 +101,8 @@ class Stitcher:
                     id=id,
                     img_path=path,
                     inference_size=None,
-                    _image=None, orig_size=None,
+                    _image=None,
+                    orig_size=None,
                     homography=None,
                     gain=None
                 ))
@@ -108,10 +112,10 @@ class Stitcher:
 
         return TileSet(order=order, images=images)
 
-    def _align(self, tile_set: TileSet, transformation_type: str = None,
+    def _align(self, data: StitchingData, transformation_type: str = None,
                confidence_tr: bool = None, min_inliers: int = None,
                max_inliers: int = None, min_inlier_rate: float = None, reproj_tr: float = None,
-               n_recenterings: int = None, use_bundle_adjustment: bool = None, detailed_log: bool = None
+               n_recenterings: int = None, use_BA: bool = None, detailed_log: bool = None
                ) -> StitchingData:
         """
         Align a set of images using matching and transformation techniques.
@@ -132,24 +136,19 @@ class Stitcher:
         min_inlier_rate = min_inlier_rate if min_inlier_rate is not None else self.min_inlier_rate
         reproj_tr = reproj_tr if reproj_tr is not None else self.reproj_tr
         n_recenterings = n_recenterings if n_recenterings is not None else self.n_recenterings
-        use_bundle_adjustment = use_bundle_adjustment if \
-            use_bundle_adjustment is not None else self.use_bundle_adjustment
+        use_BA = use_BA if use_BA is not None else self.use_BA
         detailed_log = detailed_log if detailed_log is not None else self.detailed_log
 
         try:
-
-            data = self.matcher.match(tile_set)
-
             data = matches_alignment(
                 data, transformation_type, confidence_tr,
                 min_inliers, max_inliers, min_inlier_rate, reproj_tr, n_recenterings
             )
 
-            if use_bundle_adjustment:
+            if use_BA:
                 data = Optimizer(transformation_type, data).bundle_adjustment()
 
             data = translate_and_add_panorama_size(data)
-
             return data
 
         except Exception as e:
@@ -202,7 +201,7 @@ class Stitcher:
             logger.error(f"Composition failed: {str(e)}")
             return None
 
-    def _stitch_full_pipline(self, tile_set: TileSet) -> Panorama:
+    def _stitch_full_pipline(self, data: StitchingData) -> Panorama:
         """
         Perform the full stitching pipeline to create a seamless panorama from
         input images.
@@ -217,7 +216,7 @@ class Stitcher:
                 composition) fails.
         """
         try:
-            alignment_data = self._align(tile_set)
+            alignment_data = self._align(data)
             panorama_data = self._compose(alignment_data)
             return panorama_data
         except Exception as e:
@@ -225,7 +224,7 @@ class Stitcher:
             logger.error(f"Full stitching pipeline failed: {str(e)}")
             return None
 
-    def _stitch_collage(self, tile_set: TileSet) -> Panorama:
+    def _stitch_collage(self, data: StitchingData) -> Panorama:
         """
         Create a collage-style panorama from input images with minimal blending.
         Args:
@@ -239,37 +238,18 @@ class Stitcher:
                 (alignment or collage creation) fails.
         """
         try:
-            alignment_data = self._align(tile_set)
-            panorama_data = make_collage(alignment_data)
+            alignment_data = self._align(data)
+            if self.draw_inliers:
+                panorama_data = make_collage_with_inliers(alignment_data)
+            else:
+                panorama_data = make_collage(alignment_data)
             return panorama_data
         except Exception as e:
 
             logger.error(f"Collage stitching failed: {str(e)}")
             return None
 
-    def _stitch_collage_no_optimize(self, tile_set: TileSet) -> Panorama:
-        """
-        Create a collage-style panorama from input images with minimal blending.
-        Args:
-            images (ImageSet): Set of images to be stitched into a collage,
-                containing image data and processing order.
-        Returns:
-            PanoramaData: Data object representing the stitched collage panorama
-                with the composed image and canvas.
-        Raises:
-            RuntimeError: If any step in the collage stitching process
-                (alignment or collage creation) fails.
-        """
-        try:
-            alignment_data = self._align(tile_set, use_bundle_adjustment=False)
-            panorama_data = make_collage(alignment_data)
-            return panorama_data
-        except Exception as e:
-
-            logger.error(f"Collage stitching failed: {str(e)}")
-            return None
-
-    def _stitch_compensated_collage(self, tile_set: TileSet) -> Panorama:
+    def _stitch_compensated_collage(self, data: StitchingData) -> Panorama:
         """
         Perform the full stitching pipeline to create a seamless panorama from
         input images.
@@ -284,7 +264,7 @@ class Stitcher:
                 composition) fails.
         """
         try:
-            alignment_data = self._align(tile_set)
+            alignment_data = self._align(data)
             data = apply_gain_comp(alignment_data)
             panorama_data = make_collage(data, use_gains=True)
             return panorama_data
@@ -293,7 +273,7 @@ class Stitcher:
             logger.error(f"Full stitching pipeline failed: {str(e)}")
             return None
 
-    def _stitch_compensated_mosaic(self, tile_set: TileSet) -> Panorama:
+    def _stitch_compensated_mosaic(self, data: StitchingData) -> Panorama:
         """
         Perform the full stitching pipeline to create a seamless panorama from
         input images.
@@ -308,7 +288,7 @@ class Stitcher:
                 composition) fails.
         """
         try:
-            alignment_data = self._align(tile_set)
+            alignment_data = self._align(data)
             data = apply_gain_comp(alignment_data)
             data = apply_graphcut(data)
             panorama_data = make_mosaic(data, use_gains=True)
@@ -318,63 +298,9 @@ class Stitcher:
             logger.error(f"Full stitching pipeline failed: {str(e)}")
             return None
 
-    def save_matches(self, tile_set: TileSet, output_file: Path) -> None:
-        data = self.matcher.match(tile_set)
-        Serializer().save(data, output_file)
-
-    def stitch_with_loaded_matches(self, input_file: Path) -> TileSet:
-
-        transformation_type = self.transformation_type
-        confidence_tr = self.confidence_tr
-        min_inliers = self.min_inliers
-        max_inliers = self.max_inliers
-        min_inlier_rate = self.min_inlier_rate
-        reproj_tr = self.reproj_tr
-        n_recenterings = self.n_recenterings
-
-        data = Serializer().load(input_file)
-
-        data = matches_alignment(
-            data, transformation_type, confidence_tr, min_inliers,
-            max_inliers, min_inlier_rate, reproj_tr, n_recenterings
-        )
-
-        data = Optimizer(transformation_type, data).bundle_adjustment()
-
-        data = translate_and_add_panorama_size(data)
-
-        panorama_data = make_collage(data)
-        return panorama_data
-
-    def _stitch_with_loaded_matches_draw_inliers(self, input_file: Path) -> TileSet:
-
-        transformation_type = self.transformation_type
-        confidence_tr = self.confidence_tr
-        min_inliers = self.min_inliers
-        max_inliers = self.max_inliers
-        min_inlier_rate = self.min_inlier_rate
-        reproj_tr = self.reproj_tr
-        n_recenterings = self.n_recenterings
-
-        data = Serializer().load(input_file)
-
-        data = matches_alignment(
-            data, transformation_type, confidence_tr, min_inliers,
-            max_inliers, min_inlier_rate, reproj_tr, n_recenterings
-        )
-
-        data = Optimizer(transformation_type, data).bundle_adjustment()
-
-        data = translate_and_add_panorama_size(data)
-
-        panorama_data = make_collage_with_inliers(data)
-        return panorama_data
-
-    def _undistort_and_stitch_collage(
+    def _CUBA(  # Custom Undistortion Bundle Adjustment
         self,
-        input_dir: Path,
-        tmp_dir: Path,
-        matches_dir: Path = None
+        data: StitchingData,
     ) -> TileSet:
 
         transformation_type = self.transformation_type
@@ -393,11 +319,6 @@ class Stitcher:
         lr_p: float = 0.0003795853142670637
         h_gamma: float = 0.9
         d_gamma: float = 0.9
-
-        if matches_dir is not None:
-            data = Serializer().load(matches_dir)
-        else:
-            data = self.matcher.match(input_dir)
 
         data = matches_alignment(
             data, transformation_type, confidence_tr, min_inliers,
@@ -428,40 +349,12 @@ class Stitcher:
 
         affine_cm = d_optimizer.get_camera_matrix_batch().squeeze().cpu().detach().numpy()
         affine_dp = d_optimizer.get_distortion_params_batch().cpu().detach().numpy()[:, :5]
-        try:
-            undistort_dir(
-                input_dir=input_dir,
-                output_dir=tmp_dir,
-                camera_matrix=affine_cm,
-                distortion_params=affine_dp
-            )
-        except Exception as e:
-            print(f"Affine undistortion failed: {e}")
 
-        tile_set = self._parse_dir(tmp_dir)
-        try:
-            data = self._align(
-                tile_set=tile_set,
-                transformation_type=transformation_type,
-                confidence_tr=confidence_tr,
-                min_inliers=min_inliers,
-                max_inliers=max_inliers,
-                min_inlier_rate=min_inlier_rate,
-                reproj_tr=reproj_tr,
-                n_recenterings=n_recenterings,
-            )
-        except Exception as e:
-            print(f"Affine stitching failed: {e}")
-        finally:
-            if tmp_dir.exists():
-                shutil.rmtree(tmp_dir)
-
-        panorama_data = make_collage(data)
-
-        return panorama_data
+        return affine_cm, affine_dp
 
     @log_time("Panorama done for", logger)
-    def stitch(self, input_dir: Path, output_file: Path, cache_path: Path = None, mode: str = None) -> None:
+    def stitch(self, tiles_dir: Path, output_file: Path, cache_path: Path = None,
+               load_matches: bool = None, mode: str = None) -> None:
         """
         Stitch images from a directory into a panorama with the specified mode
         and save the result to a file.
@@ -480,30 +373,37 @@ class Stitcher:
                 during parsing. The output format and quality depend on the file
                 extension provided in output_file.
         """
-        # mode = self.sticthing_mode if mode is None else mode
-        tile_set = self._parse_dir(input_dir)
-        matches_dir = cache_path / 'matches.pkl'
+        load_matches = self.load_matches if load_matches is None else load_matches
+        if load_matches:
+            matches_dir = cache_path / 'matches.pkl'
+            data = Serializer().load(matches_dir)
+        else:
+            tile_set = self._parse_dir(tiles_dir)
+            data = self.matcher.match(tile_set)
+
+        mode = self.stitching_mode if mode is None else mode
         match mode:
-            case 'full' | 'auto':
-                panorama_data = self._stitch_full_pipline(tile_set)
-            case 'collage':
-                panorama_data = self._stitch_collage(tile_set)
-            case 'gaincomp collage':
-                panorama_data = self._stitch_compensated_collage(tile_set)
-            case 'mosaic':
-                panorama_data = self._stitch_compensated_mosaic(tile_set)
             case 'save_matches':
-                self.save_matches(tile_set, matches_dir)
+                Serializer().save(data, matches_dir)
                 return
-            case 'load_matches':
-                panorama_data = self.stitch_with_loaded_matches(matches_dir)
-            case 'collage_no_optimize':
-                panorama_data = self._stitch_collage_no_optimize(tile_set)
-            case 'load_matches_draw_inliers':
-                panorama_data = self._stitch_with_loaded_matches_draw_inliers(matches_dir)
+            case 'full' | 'auto':
+                panorama_data = self._stitch_full_pipline(data)
+            case 'collage':
+                panorama_data = self._stitch_collage(data)
+            case 'gaincomp collage':
+                panorama_data = self._stitch_compensated_collage(data)
+            case 'mosaic':
+                panorama_data = self._stitch_compensated_mosaic(data)
             case 'undistort_and_stitch_collage':
+                camera_matrix, distortion_params = self._CUBA(data)
                 tmp_dir = cache_path / 'undistorted_temp'
-                panorama_data = self._undistort_and_stitch_collage(input_dir, tmp_dir, matches_dir)
+                undistort_dir(tiles_dir, tmp_dir, camera_matrix, distortion_params)
+                try:
+                    self.stitch(tmp_dir, output_file, cache_path, load_matches=False, mode='collage')
+                finally:
+                    if tmp_dir.exists():
+                        shutil.rmtree(tmp_dir)
+                return
             case _:
                 raise ValueError(f"Invalid mode: {mode}")
 
@@ -512,28 +412,3 @@ class Stitcher:
         except Exception as e:
             logger.error(f"Failed to save panorama to {output_file}: {str(e)}")
             return
-
-    @log_time("Total processing time:", logger)
-    def process_collection(self, input_dir: Path, output_dir: Path, cache_dir: Path, mode: str = None) -> None:
-        # mode = self.sticthing_mode if mode is None else mode
-        datasets = [d for d in input_dir.iterdir() if d.is_dir()]
-        datasets.sort(key=lambda path: path.name)
-
-        with tqdm(datasets, desc="Datasets", position=0, leave=True, dynamic_ncols=True) as dataset_pbar:
-            for dataset in dataset_pbar:
-                dataset_pbar.set_postfix_str(f"{dataset.name}")
-                logger.info(f"Processing dataset: {dataset.name}")
-
-                series_list = [s for s in dataset.iterdir() if s.is_dir()]
-                series_list.sort(key=lambda path: path.name)
-                with tqdm(series_list, desc="Series", position=1, leave=False, dynamic_ncols=True) as series_pbar:
-                    for series in series_pbar:
-                        series_pbar.set_postfix_str(f"{series.name}")
-                        logger.info(f"Processing series: {series.name}")
-
-                        input_path = input_dir / dataset.name / series.name
-                        output_path = output_dir / dataset.name / (series.name + ".jpg")
-                        cache_path = cache_dir / dataset.name / series.name
-                        Path(output_path.parent).mkdir(parents=True, exist_ok=True)
-
-                        self.stitch(input_path, output_path, cache_path, mode)

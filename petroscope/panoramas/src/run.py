@@ -1,6 +1,7 @@
 from matcher import Matcher
 from stitcher import Stitcher
-from pathlib import Path
+from runner import Runner
+
 import os
 import hydra
 from omegaconf import DictConfig
@@ -19,7 +20,7 @@ def main(cfg: DictConfig):
 
     stitcher = Stitcher(
         matcher=matcher,
-
+        load_matches=cfg.load_matches,
         transformation_type=cfg.align.transformation_type,
         confidence_tr=cfg.align.confidence_tr,
         min_inliers=cfg.align.min_inliers,
@@ -27,7 +28,7 @@ def main(cfg: DictConfig):
         min_inlier_rate=cfg.align.min_inlier_rate,
         reproj_tr=cfg.align.reproj_tr,
         n_recenterings=cfg.align.n_recenterings,
-        use_bundle_adjustment=cfg.align.use_bundle_adjustment,
+        use_BA=cfg.align.use_BA,
 
         use_gain_comp=cfg.compose.use_gain_comp,
         use_graphcut=cfg.compose.use_graphcut,
@@ -45,16 +46,16 @@ def main(cfg: DictConfig):
 
         draw_inliers=cfg.vizualization.draw_inliers,
 
-        # stitching_mode=cfg.stitching_mode
+        stitching_mode=cfg.stitching_mode
     )
 
-    # print(f"Stitching mode: {cfg.stitching_mode}")
-
-    input_dir = Path(cfg.dirs.datasets_dir)
-    cache_dir = Path(cfg.dirs.cache_dir)
-    output_dir = Path(cfg.dirs.panoramas_dir)
-
-    stitcher.process_collection(input_dir, output_dir, cache_dir, mode=cfg.stitching_mode)
+    runner = Runner()
+    runner.process_collection(
+        stitcher=stitcher,
+        tiles_metadir=cfg.dirs.tiles_dir,
+        cache_metadir=cfg.dirs.cache_dir,
+        output_metadir=cfg.dirs.panoramas_dir
+    )
 
 
 if __name__ == "__main__":
