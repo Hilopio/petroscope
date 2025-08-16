@@ -30,15 +30,15 @@ graphcut:
 blending:
   n_levels: 7
 
-dirs:
-  tiles_dir: "/home/g.nikolaev/data/tiles"
-  cache_dir: "/home/g.nikolaev/data/cache"
-  panoramas_dir: "/home/g.nikolaev/data/panoramas"
-
 # dirs:
-#   tiles_dir: "/home/g.nikolaev/data/metal_tiles"
-#   cache_dir: "/home/g.nikolaev/data/metal_cache"
-#   panoramas_dir: "/home/g.nikolaev/data/metal_panoramas"
+#   tiles_dir: "/home/g.nikolaev/data/tiles"
+#   cache_dir: "/home/g.nikolaev/data/cache"
+#   panoramas_dir: "/home/g.nikolaev/data/panoramas"
+
+dirs:
+  tiles_dir: "/home/g.nikolaev/data/metal_tiles"
+  cache_dir: "/home/g.nikolaev/data/metal_cache"
+  panoramas_dir: "/home/g.nikolaev/data/metal_panoramas"
 
 log:
   detailed_log: True

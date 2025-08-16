@@ -61,6 +61,8 @@ def find_homographies_and_inliers(
                     method=cv2.USAC_MAGSAC,
                     ransacReprojThreshold=reproj_tr
                 )
+                if M is None:
+                    continue
                 H_ij = np.vstack([M, [0, 0, 1]])
             case 'projective':
                 H_ij, ransac_mask = cv2.findHomography(
@@ -69,11 +71,10 @@ def find_homographies_and_inliers(
                     method=cv2.USAC_MAGSAC,
                     ransacReprojThreshold=reproj_tr,
                 )
+                if H_ij is None:
+                    continue
             case _:
                 raise ValueError(f"Unknown transformation type: {transformation_type}")
-
-        if H_ij is None:
-            continue
 
         num_inliers_ij = ransac_mask.sum()
 

@@ -44,22 +44,34 @@ class Matcher:
                 and confidence scores.
         """
         batch_size = self.batch_size if batch_size is None else batch_size
-        inference_size = self.inference_size if inference_size is None else inference_size
+        inference_size = np.array(self.inference_size if inference_size is None else inference_size)
 
         n = len(tile_set.order)
+        # Генерируем пары индексов с помощью triu_indices (i < j)
+        ord_i, ord_j = np.triu_indices(n, k=1)
+        pairs = list(zip(ord_i, ord_j))
+        total_infer = len(pairs)
+        batch_num = (total_infer - 1) // batch_size + 1
 
-        batch1: list[torch.Tensor] = []
-        batch2: list[torch.Tensor] = []
-        for i in range(n - 1):
-            for j in range(i + 1, n):
+        matches: list[Match] = []
+
+        for batch_idx in range(batch_num):
+            start = batch_idx * batch_size
+            end = min(start + batch_size, total_infer)
+            current_pairs = pairs[start:end]
+
+            batch1: list[torch.Tensor] = []
+            batch2: list[torch.Tensor] = []
+            for pair in current_pairs:
+                i, j = pair
                 id_i = tile_set.order[i]
                 id_j = tile_set.order[j]
 
                 img_i = tile_set.images[id_i]
                 img_j = tile_set.images[id_j]
 
-                img_i.inference_size = inference_size
-                img_j.inference_size = inference_size
+                img_i.inference_size = inference_size.tolist()
+                img_j.inference_size = inference_size.tolist()
 
                 array_i = img_i.image_grayscale_downscaled
                 array_j = img_j.image_grayscale_downscaled
@@ -70,17 +82,15 @@ class Matcher:
                 batch1.append(tensor_i)
                 batch2.append(tensor_j)
 
-        batch1_tensor = torch.cat(batch1, dim=0)
-        batch2_tensor = torch.cat(batch2, dim=0)
+            if not batch1:
+                raise Exception("Batch is empty")
 
-        loftr_results: list[np.ndarray] = []
-        total_infer = n * (n - 1) // 2
-        batch_num = (total_infer - 1) // batch_size + 1
+            batch1_tensor = torch.cat(batch1, dim=0).to(self.device)
+            batch2_tensor = torch.cat(batch2, dim=0).to(self.device)
 
-        for i in range(batch_num):
             input_dict = {
-                "image0": batch1_tensor[batch_size * i: batch_size * (i + 1)].to(self.device),
-                "image1": batch2_tensor[batch_size * i: batch_size * (i + 1)].to(self.device),
+                "image0": batch1_tensor,
+                "image1": batch2_tensor,
             }
             with torch.inference_mode():
                 correspondences = self.model(input_dict)
@@ -94,33 +104,21 @@ class Matcher:
             gc.collect()
             torch.cuda.empty_cache()
 
-            for i in range(batch_size):
-                idx = batch_result["batch_indexes"] == i
-                if not idx.any():
-                    loftr_results.append(np.empty((0, 5)))
-                    continue
-                kp0 = batch_result["keypoints0"][idx]
-                kp1 = batch_result["keypoints1"][idx]
-                conf = batch_result["confidence"][idx]
-                loftr_results.append(
-                    np.concatenate([kp0.numpy(), kp1.numpy(), conf.numpy()[..., None]], axis=-1)
-                )
-
-        inference_size = np.array(inference_size)
-        matches: list[Match] = []
-        result_index = 0
-
-        for i in range(n - 1):
-            for j in range(i + 1, n):
-                corrs = loftr_results[result_index]
-                result_index += 1
-                if corrs.shape[0] == 0:
-                    continue
+            for local_i, (i, j) in enumerate(current_pairs):
                 id_i = tile_set.order[i]
                 id_j = tile_set.order[j]
-                xy_i = corrs[:, 0:2] * tile_set.images[id_i].orig_size / self.inference_size
-                xy_j = corrs[:, 2:4] * tile_set.images[id_j].orig_size / self.inference_size
-                conf = corrs[:, 4]
+
+                idx = batch_result["batch_indexes"] == local_i
+                if not idx.any():
+                    continue
+
+                kp0 = batch_result["keypoints0"][idx].numpy()
+                kp1 = batch_result["keypoints1"][idx].numpy()
+                conf = batch_result["confidence"][idx].numpy()
+
+                xy_i = kp0 * tile_set.images[id_i].orig_size / inference_size
+                xy_j = kp1 * tile_set.images[id_j].orig_size / inference_size
+
                 matches.append(Match(id_i, id_j, xy_i, xy_j, conf))
 
         return StitchingData(
