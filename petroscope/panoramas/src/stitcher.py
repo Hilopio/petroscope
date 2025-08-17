@@ -1,5 +1,6 @@
 from pathlib import Path
 import shutil
+import numpy as np
 from logger import logger, log_time
 
 from classes import Tile, TileSet, StitchingData, Panorama
@@ -33,7 +34,8 @@ class Stitcher:
                  n_recenterings: int = 5, use_BA: bool = True, save_mean_color: bool = True,
                  coarse_scale: int = 4, fine_scale: int = 16, lane_width: int = 200, n_levels: int = 7,
                  use_gain_comp: bool = True, use_graphcut: bool = True, use_blending: bool = True,
-                 detailed_log: bool = True, draw_inliers: bool = False, stitching_mode: str = "collage"
+                 detailed_log: bool = True, draw_inliers: bool = False,
+                 custom_undistortion: bool = False, n_undistortions: int = 1, stitching_mode: str = "collage"
                  ) -> None:
         """
         Initialize the Stitcher with a matcher object and configuration parameters.
@@ -74,6 +76,8 @@ class Stitcher:
 
         self.detailed_log = detailed_log
         self.draw_inliers = draw_inliers
+        self.custom_undistortion = custom_undistortion
+        self.n_undistortions = n_undistortions
         self.stitching_mode = stitching_mode
 
     def _parse_dir(self, dir_path: Path) -> TileSet:
@@ -311,7 +315,8 @@ class Stitcher:
         reproj_tr = self.reproj_tr
         n_recenterings = self.n_recenterings
 
-        lr_f: float = 1239.9967836846104
+        # lr_f: float = 1239.9967836846104
+        lr_log_f: float = 1e-2
         lr_c: float = 3.585612610345396
         lr_k1: float = 0.07556810141274425
         lr_k2: float = 0.001260466458564947
@@ -333,7 +338,8 @@ class Stitcher:
         d_optimizer = DistortionOptimizer('affine', self.device, data, f=f, cx=cx, cy=cy)
         try:
             data = d_optimizer.bundle_adjustment(
-                lr_f=lr_f,
+                # lr_f=lr_f,
+                lr_log_f=lr_log_f,
                 lr_c=lr_c,
                 lr_k1=lr_k1,
                 lr_k2=lr_k2,
@@ -341,8 +347,8 @@ class Stitcher:
                 lr_p=lr_p,
                 h_gamma=h_gamma,
                 d_gamma=d_gamma,
-                max_iter=400,
-                verbose='none'
+                max_iter=2000,
+                verbose='core'
             )
         except Exception as e:
             print(f"Affine bundle adjustment failed: {e}")
@@ -351,6 +357,31 @@ class Stitcher:
         affine_dp = d_optimizer.get_distortion_params_batch().cpu().detach().numpy()[:, :5]
 
         return affine_cm, affine_dp
+
+    def preproccess_undictortion(
+        self,
+        tiles_dir: Path,
+        cache_dir: Path,
+        n_undistortions: int = None
+    ) -> tuple[np.ndarray, np.ndarray]:
+
+        current_dir = Path(str(tiles_dir))
+        tmp_dir = cache_dir / 'tmp'
+        for _ in range(n_undistortions):
+
+            tile_set = self._parse_dir(current_dir)
+            data = self.matcher.match(tile_set)
+            camera_matrix, distortion_params = self._CUBA(data)
+
+            if iter == n_undistortions - 1:
+                break
+
+            undistort_dir(current_dir, tmp_dir, camera_matrix, distortion_params)
+            current_dir = tmp_dir
+
+        if tmp_dir.exists():
+            shutil.rmtree(tmp_dir)
+        return camera_matrix, distortion_params
 
     @log_time("Panorama done for", logger)
     def stitch(self, tiles_dir: Path, output_file: Path, cache_path: Path = None,
@@ -373,6 +404,16 @@ class Stitcher:
                 during parsing. The output format and quality depend on the file
                 extension provided in output_file.
         """
+        if self.custom_undistortion:
+            camera_matrix, distortion_params = self.preproccess_undictortion(
+                tiles_dir,
+                cache_path,
+                n_undistortions=self.n_undistortions
+            )
+            tmp_dir = cache_path / 'tmp'
+            undistort_dir(tiles_dir, tmp_dir, camera_matrix, distortion_params)
+            tiles_dir = tmp_dir
+
         load_matches = self.load_matches if load_matches is None else load_matches
         if load_matches:
             matches_dir = cache_path / 'matches.pkl'
@@ -394,16 +435,6 @@ class Stitcher:
                 panorama_data = self._stitch_compensated_collage(data)
             case 'mosaic':
                 panorama_data = self._stitch_compensated_mosaic(data)
-            case 'undistort_and_stitch_collage':
-                camera_matrix, distortion_params = self._CUBA(data)
-                tmp_dir = cache_path / 'undistorted_temp'
-                undistort_dir(tiles_dir, tmp_dir, camera_matrix, distortion_params)
-                try:
-                    self.stitch(tmp_dir, output_file, cache_path, load_matches=False, mode='collage')
-                finally:
-                    if tmp_dir.exists():
-                        shutil.rmtree(tmp_dir)
-                return
             case _:
                 raise ValueError(f"Invalid mode: {mode}")
 
@@ -411,4 +442,7 @@ class Stitcher:
             panorama_data.save_panorama(output_file)
         except Exception as e:
             logger.error(f"Failed to save panorama to {output_file}: {str(e)}")
-            return
+
+        if self.custom_undistortion:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir)

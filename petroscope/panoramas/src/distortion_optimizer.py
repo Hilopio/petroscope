@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from torch.optim.lr_scheduler import StepLR
 from kornia.geometry.calibration import undistort_points
 
+from logger import logger, log_time
 from classes import StitchingData
 
 
@@ -39,7 +40,15 @@ class DistortionOptimizerBase(ABC):
 
         self.n_images = self.homographies.shape[1]
 
-        self.f = nn.Parameter(torch.tensor([f], device=self.device, dtype=torch.float32, requires_grad=True))
+        # self.f = nn.Parameter(torch.tensor([f], device=self.device, dtype=torch.float32, requires_grad=True))
+        self.log_f = nn.Parameter(
+            torch.tensor(
+                [torch.log(torch.tensor(f))],
+                device=self.device,
+                dtype=torch.float32,
+                requires_grad=True
+            )
+        )
 
         # Параметры главной точки - заморозка контролируется флагом
         self.c_xy = nn.Parameter(
@@ -63,6 +72,11 @@ class DistortionOptimizerBase(ABC):
 
         # Векторизованная подготовка данных для матчей
         self._prepare_vectorized_matches(data.matches)
+
+    @property
+    def f(self):
+        """Вычисляет f из логарифмического параметра: f = exp(log_f)"""
+        return torch.exp(self.log_f)
 
     def _prepare_vectorized_matches(self, matches):
         """Предварительная векторизация всех матчей для ускорения вычислений"""
@@ -200,26 +214,29 @@ class DistortionOptimizerBase(ABC):
     def get_homographies_params(self):
         pass
 
-    def bundle_adjustment(self, lr_f=1e3, lr_c=1e1, lr_k1=1e-2, lr_k2=1e-4, lr_k3=1e-6, lr_p=1e-3,
+    @log_time("Undistortion bundle adjustment done for", logger)
+    def bundle_adjustment(self,
+                          #   lr_f=1e3,
+                          lr_log_f=1e-2,
+                          lr_c=1e1, lr_k1=1e-2, lr_k2=1e-4, lr_k3=1e-6, lr_p=1e-3,
                           h_gamma=0.95, d_gamma=0.3,
                           max_iter=5000, verbose='full') -> float:
 
         homographies_params = self.get_homographies_params()
         homographies_optimizer = torch.optim.Adam(homographies_params, betas=(0.9, 0.999), eps=1e-8)
 
-        # Создаем параметры для дисторсионного оптимизатора только для незамороженных параметров
         distortion_params = [
-            {'params': [self.f], 'lr': lr_f},
+            # {'params': [self.f], 'lr': lr_f},
+            {'params': [self.log_f], 'lr': lr_log_f},  # Параметр для log(f)
+
             {'params': [self.k1], 'lr': lr_k1},
             {'params': [self.k2], 'lr': lr_k2},
             {'params': [self.k3], 'lr': lr_k3},
         ]
 
-        # Добавляем параметры главной точки только если они не заморожены
         if not self.freeze_principal_point:
             distortion_params.append({'params': [self.c_xy], 'lr': lr_c})
 
-        # Добавляем тангенциальные параметры только если они не заморожены
         if not self.freeze_tangential:
             distortion_params.append({'params': [self.p], 'lr': lr_p})
 
@@ -231,7 +248,7 @@ class DistortionOptimizerBase(ABC):
         with torch.no_grad():
             initial_loss = torch.sqrt(self.reprojection_mse()).item()
             if verbose in ('core', 'full'):
-                print(f"Initial error: {initial_loss}")
+                logger.debug(f"Initial error: {initial_loss}")
 
         # Для early stopping
         best_loss = float('inf')
@@ -262,7 +279,7 @@ class DistortionOptimizerBase(ABC):
             else:
                 patience_counter += 1
                 if patience_counter > patience:
-                    print(f"Early stopping at iteration {iteration}")
+                    logger.debug(f"Early stopping at iteration {iteration}")
                     break
 
             if (iteration + 1) % 200 == 0:
@@ -270,12 +287,12 @@ class DistortionOptimizerBase(ABC):
                 iteration_history.append(iteration + 1)
                 loss_history.append(current_error)
                 if verbose == 'full':
-                    print(f"Iteration: {iteration + 1}, Loss: {current_error:.6f}")
+                    logger.debug(f"Iteration: {iteration + 1}, Loss: {current_error:.6f}")
 
         if verbose in ('core', 'full'):
             with torch.no_grad():
                 final_loss = torch.sqrt(self.reprojection_mse()).item()
-                print(f"Optimized error: {final_loss}")
+                logger.debug(f"Optimized error: {final_loss}")
 
         # Выводим финальные параметры с пометками о заморозке
         cx_str = f"cx={self.c_xy[0].item():.2f}" + (" (frozen)" if self.freeze_principal_point else "")

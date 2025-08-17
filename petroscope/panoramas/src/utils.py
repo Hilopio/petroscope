@@ -94,22 +94,29 @@ def undistort_dir(
     camera_matrix: np.ndarray,
     distortion_params: np.ndarray
 ):
-    """Undistort images in input_dir and save to output_dir"""
-    if output_dir.exists():
+    """Undistort images in input_dir and save to output_dir."""
+    # Проверка существования входной директории
+    if not input_dir.exists():
+        raise ValueError(f"Input directory {input_dir} does not exist.")
+
+    # Если выходная директория совпадает с входной, работаем с копией списка файлов
+    process_dir = input_dir
+    if output_dir.exists() and not input_dir.samefile(output_dir):
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Собираем список изображений
     img_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff', '*.TIF']
-    images = []
-    for ext in img_extensions:
-        images.extend(input_dir.glob(ext))
+    images = [img for ext in img_extensions for img in process_dir.glob(ext)]
 
     for img_path in images:
+        # Чтение изображения
         img = cv2.imread(str(img_path))
         if img is None:
             print(f"Failed to read {img_path}, skipping.")
             continue
 
+        # Исправление дисторсии
         h, w = img.shape[:2]
         new_camera_mtx, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, distortion_params, (w, h), alpha=0)
         mapx, mapy = cv2.initUndistortRectifyMap(
@@ -118,5 +125,6 @@ def undistort_dir(
         undistorted_roi = cv2.remap(img, mapx, mapy, interpolation=cv2.INTER_LINEAR)
         undistorted = cv2.resize(undistorted_roi, (w, h), interpolation=cv2.INTER_LINEAR)
 
+        # Сохранение результата
         out_path = output_dir / img_path.name
         cv2.imwrite(str(out_path), undistorted)

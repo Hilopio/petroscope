@@ -46,6 +46,8 @@ def main(cfg: DictConfig):
 
         draw_inliers=cfg.vizualization.draw_inliers,
 
+        custom_undistortion=cfg.custom_undistortion,
+        n_undistortions=cfg.n_undistortions,
         stitching_mode=cfg.stitching_mode
     )
 
