@@ -40,6 +40,12 @@ dirs:
 #   cache_dir: "/home/g.nikolaev/data/metal_cache"
 #   panoramas_dir: "/home/g.nikolaev/data/metal_panoramas"
 
+
+# dirs:
+#   tiles_dir: "/home/g.nikolaev/data/new_tiles"
+#   cache_dir: "/home/g.nikolaev/data/new_cache"
+#   panoramas_dir: "/home/g.nikolaev/data/new_panoramas"
+
 log:
   detailed_log: True
 
@@ -47,7 +53,7 @@ vizualization:
   draw_inliers: False
 
 load_matches: False
-custom_undistortion: True
-n_undistortions: 3
+custom_undistortion: False
+n_undistortions: 1
 # stitching_mode: 'save_matches'
 stitching_mode: 'collage'

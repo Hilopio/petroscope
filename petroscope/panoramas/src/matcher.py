@@ -18,7 +18,7 @@ class Matcher:
         Args:
             device: The device to be used for matching operations (e.g., 'cpu' or 'cuda').
         """
-        self.device = device if device else torch.device("cpu")
+        self.device = torch.device(device if device else "cpu")
         self.batch_size = batch_size
         self.inference_size = inference_size
 
@@ -47,62 +47,45 @@ class Matcher:
         inference_size = np.array(self.inference_size if inference_size is None else inference_size)
 
         n = len(tile_set.order)
-        # Генерируем пары индексов с помощью triu_indices (i < j)
+
+        if n < 2:
+            raise Exception("Not enough images to match")
+
         ord_i, ord_j = np.triu_indices(n, k=1)
         pairs = list(zip(ord_i, ord_j))
         total_infer = len(pairs)
         batch_num = (total_infer - 1) // batch_size + 1
 
         matches: list[Match] = []
-
         for batch_idx in range(batch_num):
-            start = batch_idx * batch_size
-            end = min(start + batch_size, total_infer)
-            current_pairs = pairs[start:end]
+            current_pairs = pairs[batch_idx * batch_size:(batch_idx + 1) * batch_size]
 
             batch1: list[torch.Tensor] = []
             batch2: list[torch.Tensor] = []
-            for pair in current_pairs:
-                i, j = pair
+            for i, j in current_pairs:
                 id_i = tile_set.order[i]
                 id_j = tile_set.order[j]
-
-                img_i = tile_set.images[id_i]
-                img_j = tile_set.images[id_j]
-
-                img_i.inference_size = inference_size.tolist()
-                img_j.inference_size = inference_size.tolist()
-
-                array_i = img_i.image_grayscale_downscaled
-                array_j = img_j.image_grayscale_downscaled
-
-                tensor_i = torch.from_numpy(array_i).unsqueeze(0).unsqueeze(0)
-                tensor_j = torch.from_numpy(array_j).unsqueeze(0).unsqueeze(0)
-
+                tensor_i = tile_set.images[id_i].get_loftr_tensor(inference_size)
+                tensor_j = tile_set.images[id_j].get_loftr_tensor(inference_size)
                 batch1.append(tensor_i)
                 batch2.append(tensor_j)
-
-            if not batch1:
-                raise Exception("Batch is empty")
 
             batch1_tensor = torch.cat(batch1, dim=0).to(self.device)
             batch2_tensor = torch.cat(batch2, dim=0).to(self.device)
 
-            input_dict = {
-                "image0": batch1_tensor,
-                "image1": batch2_tensor,
-            }
-            with torch.inference_mode():
-                correspondences = self.model(input_dict)
-            batch_result = {
-                "batch_indexes": correspondences["batch_indexes"].detach().cpu(),
-                "keypoints0": correspondences["keypoints0"].detach().cpu(),
-                "keypoints1": correspondences["keypoints1"].detach().cpu(),
-                "confidence": correspondences["confidence"].detach().cpu(),
-            }
+            try:
+                with torch.inference_mode():
+                    correspondences = self.model({"image0": batch1_tensor, "image1": batch2_tensor})
+            except torch.cuda.OutOfMemoryError:
+                logger.warning(f"Out of memory for batch {batch_idx + 1}/{batch_num}. Consider reducing batch size.")
+                raise
+
+            batch_result = {k: v.detach().cpu() for k, v in correspondences.items()}
             del correspondences
+            if 'cuda' in self.device.type:
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
             gc.collect()
-            torch.cuda.empty_cache()
 
             for local_i, (i, j) in enumerate(current_pairs):
                 id_i = tile_set.order[i]

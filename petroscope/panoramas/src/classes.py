@@ -5,6 +5,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import cv2
+import torch
 
 
 @dataclass
@@ -23,9 +24,15 @@ class Tile:
     img_path: Path
     _image: np.ndarray
     orig_size: np.ndarray
-    inference_size: list
     homography: np.ndarray
     gain: np.ndarray
+    _tensor: torch.Tensor
+
+    def _load_image(self):
+        self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
+        h, w = self._image.shape[:2]
+        # c = 1 if self._image.ndim == 2 else self._image.shape[2]
+        self.orig_size = np.array((w, h))
 
     @property
     def image(self) -> np.ndarray:
@@ -38,12 +45,8 @@ class Tile:
             np.ndarray: The loaded image as a numpy array with values in the range [0, 1].
         """
         if self._image is None:
-            self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
+            self._load_image()
 
-            h, w = self._image.shape[:2]
-            # c = 1 if self._image.ndim == 2 else self._image.shape[2]
-
-            self.orig_size = np.array((w, h))
         return self._image
 
     @property
@@ -58,33 +61,27 @@ class Tile:
             np.ndarray: The gain-compensated image as a numpy array with values adjusted by the gain coefficients.
         """
         if self._image is None:
-            self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
+            self._load_image()
         return self._image * self.gain.astype('float32')
 
-    @property
-    def image_grayscale_downscaled(self) -> np.ndarray:
-        """
-        Property to access a grayscale, downscaled version of the image. If the image is not already loaded, it reads
-        the image from the specified file path, converts it to a numpy array with float values in the RGB color space,
-        normalized to the range [0, 1]. Then, it converts the image to grayscale and resizes it to 600x400 pixels
-        using Lanczos interpolation for high-quality downscaling.
+    def get_loftr_tensor(self, size: np.ndarray) -> torch.Tensor:
+        if size.shape != (2,) or not np.issubdtype(size.dtype, np.integer):
+            raise ValueError("size must be a 2-element numpy array of integers")
 
-        Returns:
-            np.ndarray: The grayscale, downscaled image as a numpy array.
-        """
         if self._image is None:
-            self._image = np.array(Image.open(self.img_path)).astype(np.float32) / 255.0
+            self._load_image()
 
-        h, w = self._image.shape[:2]
         c = 1 if self._image.ndim == 2 else self._image.shape[2]
+        if c not in [1, 3]:
+            raise ValueError(f"Unsupported number of channels: {c}. Expected 1 (grayscale) or 3 (RGB).")
 
-        if self.orig_size is None:
-            self.orig_size = np.array((w, h))
+        # size is (width, height), tensor shape is (1, 1, height, width)
+        if self._tensor is None or self._tensor.shape != (1, 1, size[1], size[0]):
+            grayscale = cv2.cvtColor(self._image, cv2.COLOR_RGB2GRAY) if c == 3 else self._image
+            downscale = cv2.resize(grayscale, size, interpolation=cv2.INTER_LANCZOS4)
+            self._tensor = torch.from_numpy(downscale)[None, None]
 
-        grayscale = cv2.cvtColor(self._image, cv2.COLOR_RGB2GRAY) if c == 3 else self._image
-        downscale = cv2.resize(grayscale, self.inference_size, interpolation=cv2.INTER_LANCZOS4)
-
-        return downscale
+        return self._tensor
 
 
 @dataclass

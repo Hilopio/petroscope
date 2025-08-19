@@ -93,7 +93,7 @@ class Stitcher:
             img_paths = [
                 img_p
                 for img_p in dir_path.iterdir()
-                if img_p.suffix in (".jpg", ".png", ".tiff", ".TIF")
+                if img_p.suffix in (".jpg", ".png", ".tiff", ".tif", ".TIF")
             ]
 
             img_paths.sort(key=lambda x: x.name)
@@ -104,8 +104,8 @@ class Stitcher:
                 images.append(Tile(
                     id=id,
                     img_path=path,
-                    inference_size=None,
                     _image=None,
+                    _tensor=None,
                     orig_size=None,
                     homography=None,
                     gain=None

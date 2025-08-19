@@ -106,7 +106,7 @@ def undistort_dir(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Собираем список изображений
-    img_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff', '*.TIF']
+    img_extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.tiff', '*.tif', '*.TIF']
     images = [img for ext in img_extensions for img in process_dir.glob(ext)]
 
     for img_path in images:

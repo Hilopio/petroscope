@@ -37,10 +37,6 @@ def find_homographies_and_inliers(
     Hs: list[list[np.ndarray | None]] = [[None] * n for _ in range(n)]
     num_inliers: np.ndarray = np.zeros((n, n), dtype=int)
 
-    # for i in range(n - 1):
-    #     for j in range(i + 1, n):
-    #         matches_ij = matches.pop(0)
-
     for matches_ij in matches:
         i = matches_ij.i
         j = matches_ij.j
@@ -57,7 +53,6 @@ def find_homographies_and_inliers(
                 M, ransac_mask = cv2.estimateAffine2D(
                     xy_i,
                     xy_j,
-                    # method=cv2.RANSAC,
                     method=cv2.USAC_MAGSAC,
                     ransacReprojThreshold=reproj_tr
                 )
@@ -84,21 +79,23 @@ def find_homographies_and_inliers(
         if num_inliers_ij / num_matches_ij < min_inliers_rate:
             continue
 
-        num_inliers[i][j] = num_inliers_ij
-        num_inliers[j][i] = num_inliers_ij
-
         Hs[i][j] = H_ij
         try:
             Hs[j][i] = np.linalg.inv(H_ij)
             Hs[j][i] /= Hs[j][i][2, 2]
         except np.linalg.LinAlgError:
-            assert False, f"Singular homography matrix {H_ij}"
+            logger.warning(f"Singular homography matrix for pair ({i}, {j}): {H_ij}. Skipping inverse.")
+            continue
+
+        num_inliers[i][j] = num_inliers_ij
+        num_inliers[j][i] = num_inliers_ij
 
         ransac_mask = ransac_mask.squeeze(1).astype(bool)
         xy_i = xy_i[ransac_mask]
         xy_j = xy_j[ransac_mask]
         conf = conf[ransac_mask]
 
+        # Keep top-k by confidence
         if conf.shape[0] > max_inliers:
             topk_indices = np.argpartition(conf, -max_inliers)[-max_inliers:]
             xy_i = xy_i[topk_indices]
@@ -133,7 +130,6 @@ def sequential_alignment(
     transforms: list[np.ndarray | None] = [np.eye(3) for _ in range(n)]
     query_idx: list[int] = list(range(n))
     target_idx: list[int] = []
-    outliers_idx: list[int] = []
 
     reper_idx = np.argmax(num_inliers.sum(axis=1))
 
@@ -141,7 +137,8 @@ def sequential_alignment(
     query_idx.remove(reper_idx)
 
     while query_idx:
-        a: np.ndarray = num_inliers[query_idx, :][:, target_idx]
+        # a = num_inliers[np.ix_(query_idx, target_idx)]
+        a = num_inliers[query_idx][:, target_idx]
         curr: int = int(np.argmax(a.sum(axis=1)))
         best_neighb: int = int(np.argmax(a[curr]))
 
@@ -150,7 +147,6 @@ def sequential_alignment(
                 f"None homography, matches = {num_inliers[query_idx[curr], target_idx[best_neighb]]}"
             )
             transforms[query_idx[curr]] = None
-            outliers_idx.append(query_idx[curr])
             query_idx.pop(curr)
             continue
 
@@ -163,16 +159,41 @@ def sequential_alignment(
         target_idx.append(query_idx[curr])
         query_idx.pop(curr)
 
+    if query_idx:
+        logger.warning(f"Disconnected components detected: {len(query_idx)} tiles not aligned.")
+
     return transforms, target_idx, reper_idx
 
 
+# def recentering_iteration(transforms, img_centers):
+#     warped_img_centers = []
+#     for center, H in zip(img_centers, transforms):
+#         new_center = H @ np.array([center[0], center[1], 1])
+#         new_center /= new_center[2]
+#         warped_img_centers.append(new_center[:2])
+#     warped_img_centers = np.array(warped_img_centers)
+
+#     x_min, x_max = np.min(warped_img_centers[:, 0]), np.max(warped_img_centers[:, 0])
+#     y_min, y_max = np.min(warped_img_centers[:, 1]), np.max(warped_img_centers[:, 1])
+#     panorama_center = np.array((0.5 * (x_min + x_max), 0.5 * (y_min + y_max)))
+
+#     new_pivot = np.argmin(((warped_img_centers - panorama_center) ** 2).mean(axis=1))
+
+#     inv_pivot_H = np.linalg.inv(transforms[new_pivot])
+#     new_transforms = []
+#     for H in transforms:
+#         new_H = inv_pivot_H @ H
+#         new_H /= new_H[2, 2]
+#         new_transforms.append(new_H)
+#     return new_transforms, new_pivot
+
 def recentering_iteration(transforms, img_centers):
-    warped_img_centers = []
-    for center, H in zip(img_centers, transforms):
-        new_center = H @ np.array([center[0], center[1], 1])
-        new_center /= new_center[2]
-        warped_img_centers.append(new_center[:2])
-    warped_img_centers = np.array(warped_img_centers)
+    homographies = np.array(transforms)  # shape: (n, 3, 3)
+    centers = np.column_stack((img_centers, np.ones(len(img_centers))))  # shape: (n, 3)
+
+    warped = np.einsum('nij,nj->ni', homographies, centers)  # shape: (n, 3)
+    warped /= warped[:, [2]]
+    warped_img_centers = warped[:, :2]
 
     x_min, x_max = np.min(warped_img_centers[:, 0]), np.max(warped_img_centers[:, 0])
     y_min, y_max = np.min(warped_img_centers[:, 1]), np.max(warped_img_centers[:, 1])
@@ -180,13 +201,13 @@ def recentering_iteration(transforms, img_centers):
 
     new_pivot = np.argmin(((warped_img_centers - panorama_center) ** 2).mean(axis=1))
 
-    inv_pivot_H = np.linalg.inv(transforms[new_pivot])
-    new_transforms = []
-    for H in transforms:
-        new_H = inv_pivot_H @ H
-        new_H /= new_H[2, 2]
-        new_transforms.append(new_H)
-    return new_transforms, new_pivot
+    inv_pivot_H = np.linalg.inv(transforms[new_pivot])  # shape: (3, 3)
+    new_transforms = np.einsum('ij,njk->nik', inv_pivot_H, homographies)  # shape: (n, 3, 3)
+    # new_transforms /= new_transforms[:, [2], [2]]
+    new_transforms /= new_transforms[:, 2, 2][:, None, None]
+
+    # new_transforms = [t for t in new_transforms]
+    return list(new_transforms), new_pivot
 
 
 def recentering(tile_set, n_iterations):
@@ -271,7 +292,6 @@ def matches_alignment(matches_data: StitchingData, transformation_type: str, con
     ]
     reper_idx = reverse_permute[reper_idx]
 
-    n_iterations: int = 25
     homographies, reper_idx = recentering(tile_set, n_iterations)
     for id, H in zip(tile_set.order, homographies):
         tile_set.images[id].homography = H
