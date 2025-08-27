@@ -9,7 +9,7 @@ from matcher import Matcher
 from align_functions import matches_alignment, translate_and_add_panorama_size
 from optimizer import Optimizer
 from distortion_optimizer import DistortionOptimizer
-from collage_functions import make_collage, make_mosaic, make_collage_with_inliers
+from collage_functions import make_collage, make_mosaic
 
 from gain_comp_functions import apply_gain_comp
 from graphcut_functions import apply_graphcut
@@ -34,7 +34,7 @@ class Stitcher:
                  n_recenterings: int = 5, use_BA: bool = True, save_mean_color: bool = True,
                  coarse_scale: int = 4, fine_scale: int = 16, lane_width: int = 200, n_levels: int = 7,
                  use_gain_comp: bool = True, use_graphcut: bool = True, use_blending: bool = True,
-                 detailed_log: bool = True, draw_inliers: bool = False,
+                 detailed_log: bool = True, draw_inliers: bool = False, draw_connections: bool = False,
                  custom_undistortion: bool = False, n_undistortions: int = 1, stitching_mode: str = "collage"
                  ) -> None:
         """
@@ -76,6 +76,7 @@ class Stitcher:
 
         self.detailed_log = detailed_log
         self.draw_inliers = draw_inliers
+        self.draw_connections = draw_connections
         self.custom_undistortion = custom_undistortion
         self.n_undistortions = n_undistortions
         self.stitching_mode = stitching_mode
@@ -243,10 +244,13 @@ class Stitcher:
         """
         try:
             alignment_data = self._align(data)
-            if self.draw_inliers:
-                panorama_data = make_collage_with_inliers(alignment_data)
-            else:
-                panorama_data = make_collage(alignment_data)
+
+            panorama_data = make_collage(
+                alignment_data,
+                use_gains=False,
+                draw_inliers=self.draw_inliers,
+                draw_connections=self.draw_connections
+            )
             return panorama_data
         except Exception as e:
 
@@ -425,6 +429,7 @@ class Stitcher:
         mode = self.stitching_mode if mode is None else mode
         match mode:
             case 'save_matches':
+                matches_dir = cache_path / 'matches.pkl'
                 Serializer().save(data, matches_dir)
                 return
             case 'full' | 'auto':

@@ -1,5 +1,5 @@
 match:
-  device:  'cuda:6'  # 'cpu'  # 
+  device:  'cuda:5'  # 'cpu'  # 
   batch_size: 10
   inference_size: [600, 400]
   matcher_weights: '/home/g.nikolaev/petroscope/petroscope/panoramas/weights/loftr_outdoor.ckpt'
@@ -7,10 +7,10 @@ match:
 align:
   transformation_type: 'affine'  # 'affine' or 'projective'
   confidence_tr: 0.95
-  min_inliers: 5
-  max_inliers: 30
+  min_inliers: 50
+  max_inliers: 200
   min_inlier_rate: 0.0
-  reproj_tr: 1.0
+  reproj_tr: 5.0
   n_recenterings: 5
   use_BA: True
 
@@ -30,10 +30,10 @@ graphcut:
 blending:
   n_levels: 7
 
-dirs:
-  tiles_dir: "/home/g.nikolaev/data/tiles"
-  cache_dir: "/home/g.nikolaev/data/cache"
-  panoramas_dir: "/home/g.nikolaev/data/panoramas"
+# dirs:
+#   tiles_dir: "/home/g.nikolaev/data/tiles"
+#   cache_dir: "/home/g.nikolaev/data/cache"
+#   panoramas_dir: "/home/g.nikolaev/data/panoramas"
 
 # dirs:
 #   tiles_dir: "/home/g.nikolaev/data/metal_tiles"
@@ -41,18 +41,19 @@ dirs:
 #   panoramas_dir: "/home/g.nikolaev/data/metal_panoramas"
 
 
-# dirs:
-#   tiles_dir: "/home/g.nikolaev/data/new_tiles"
-#   cache_dir: "/home/g.nikolaev/data/new_cache"
-#   panoramas_dir: "/home/g.nikolaev/data/new_panoramas"
+dirs:
+  tiles_dir: "/home/g.nikolaev/data/new_tiles"
+  cache_dir: "/home/g.nikolaev/data/new_cache"
+  panoramas_dir: "/home/g.nikolaev/data/new_panoramas"
 
 log:
   detailed_log: True
 
 vizualization:
   draw_inliers: False
+  draw_connections: False
 
-load_matches: False
+load_matches: True
 custom_undistortion: False
 n_undistortions: 1
 # stitching_mode: 'save_matches'

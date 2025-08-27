@@ -45,6 +45,7 @@ def main(cfg: DictConfig):
         detailed_log=cfg.log.detailed_log,
 
         draw_inliers=cfg.vizualization.draw_inliers,
+        draw_connections=cfg.vizualization.draw_connections,
 
         custom_undistortion=cfg.custom_undistortion,
         n_undistortions=cfg.n_undistortions,

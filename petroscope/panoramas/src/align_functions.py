@@ -127,7 +127,7 @@ def sequential_alignment(
             - int: Index of the reference image used as the starting point for alignment.
     """
     n: int = len(Hs)
-    transforms: list[np.ndarray | None] = [np.eye(3) for _ in range(n)]
+    transforms: list[np.ndarray | None] = [None for _ in range(n)]
     query_idx: list[int] = list(range(n))
     target_idx: list[int] = []
 
@@ -143,6 +143,7 @@ def sequential_alignment(
         best_neighb: int = int(np.argmax(a[curr]))
 
         if Hs[query_idx[curr]][target_idx[best_neighb]] is None:
+            # break
             assert num_inliers[query_idx[curr], target_idx[best_neighb]] == 0, (
                 f"None homography, matches = {num_inliers[query_idx[curr], target_idx[best_neighb]]}"
             )
@@ -161,6 +162,7 @@ def sequential_alignment(
 
     if query_idx:
         logger.warning(f"Disconnected components detected: {len(query_idx)} tiles not aligned.")
+        # print(f"Disconnected components detected: {len(query_idx)} tiles not aligned.")
 
     return transforms, target_idx, reper_idx
 
@@ -270,9 +272,7 @@ def matches_alignment(matches_data: StitchingData, transformation_type: str, con
         min_inliers_rate,
         reproj_tr
     )
-
     homographies, new_idx_order, reper_idx = sequential_alignment(Hs, num_inliers)
-
     homographies = [homographies[idx] for idx in new_idx_order]  # if homographies[i] is not None
     tile_set.order = [tile_set.order[idx] for idx in new_idx_order]
     for id, H in zip(tile_set.order, homographies):
@@ -292,10 +292,22 @@ def matches_alignment(matches_data: StitchingData, transformation_type: str, con
     ]
     reper_idx = reverse_permute[reper_idx]
 
+    # reverse_permute = np.argsort(new_idx_order)
+    # inliers = [
+    #     Match(
+    #         int(reverse_permute[inlier.i]),
+    #         int(reverse_permute[inlier.j]),
+    #         inlier.xy_i,
+    #         inlier.xy_j,
+    #         inlier.conf
+    #     )
+    #     for inlier in inliers
+    #     if inlier.i in new_idx_order and inlier.j in new_idx_order
+    # ]
+    reper_idx = int(reverse_permute[reper_idx])
     homographies, reper_idx = recentering(tile_set, n_iterations)
     for id, H in zip(tile_set.order, homographies):
         tile_set.images[id].homography = H
-
     return StitchingData(
         tile_set=tile_set,
         matches=inliers,
@@ -303,6 +315,52 @@ def matches_alignment(matches_data: StitchingData, transformation_type: str, con
         panorama_size=None,
         canvas=None
     )
+
+
+# def find_translation_and_panorama_size(tile_set: TileSet) -> tuple[np.ndarray, tuple[int, int]]:
+#     """
+#     Calculate translation matrix and panorama size based on transformed image corners.
+
+#     Args:
+#         tile_set (TileSet): Set of images with their transformation matrices and original sizes.
+
+#     Returns:
+#         tuple: A tuple containing:
+#             - np.ndarray: Translation matrix to shift the panorama to positive coordinates.
+#             - tuple[int, int]: Tuple representing the panorama size (width, height).
+#     """
+#     sizes: list[np.ndarray] = []
+#     homographies: list[np.ndarray | None] = []
+#     for id in tile_set.order:
+#         img = tile_set.images[id]
+#         sizes.append(img.orig_size)
+#         homographies.append(img.homography)
+
+#     x_coords, y_coords = [], []
+#     for (w, h), H in zip(sizes, homographies):
+#         assert H is not None, "Homography matrix should not be None"
+#         corners = np.array([
+#             [0, 0, 1],
+#             [0, h, 1],
+#             [w, 0, 1],
+#             [w, h, 1]
+#         ])
+#         new_corners = H @ corners.T
+#         new_corners /= new_corners[2]
+#         x_coords.extend(new_corners[0].tolist())
+#         y_coords.extend(new_corners[1].tolist())
+
+#     x_min, x_max = np.min(x_coords), np.max(x_coords)
+#     y_min, y_max = np.min(y_coords), np.max(y_coords)
+
+#     T = np.array([
+#         [1, 0, -x_min],
+#         [0, 1, -y_min],
+#         [0, 0, 1]
+#     ])
+
+#     panorama_size = (int(np.ceil(x_max - x_min)), int(np.ceil(y_max - y_min)))
+#     return T, panorama_size
 
 
 def find_translation_and_panorama_size(tile_set: TileSet) -> tuple[np.ndarray, tuple[int, int]]:
@@ -317,26 +375,18 @@ def find_translation_and_panorama_size(tile_set: TileSet) -> tuple[np.ndarray, t
             - np.ndarray: Translation matrix to shift the panorama to positive coordinates.
             - tuple[int, int]: Tuple representing the panorama size (width, height).
     """
-    sizes: list[np.ndarray] = []
-    homographies: list[np.ndarray | None] = []
-    for id in tile_set.order:
-        img = tile_set.images[id]
-        sizes.append(img.orig_size)
-        homographies.append(img.homography)
+    sizes = np.array([tile_set.images[id].orig_size for id in tile_set.order])  # shape: (n, 2)
+    homographies = np.array([tile_set.images[id].homography for id in tile_set.order])  # shape: (n, 3, 3)
 
-    x_coords, y_coords = [], []
-    for (w, h), H in zip(sizes, homographies):
-        assert H is not None, "Homography matrix should not be None"
-        corners = np.array([
-            [0, 0, 1],
-            [0, h, 1],
-            [w, 0, 1],
-            [w, h, 1]
-        ])
-        new_corners = H @ corners.T
-        new_corners /= new_corners[2]
-        x_coords.extend(new_corners[0].tolist())
-        y_coords.extend(new_corners[1].tolist())
+    corners = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])  # shape: (4, 2)
+    corners = corners[None, :, :] * sizes[:, None, [0, 1]]  # shape: (n, 4, 2)
+    corners = np.concatenate((corners, np.ones((len(sizes), 4, 1))), axis=2)  # shape: (n, 4, 3)
+
+    new_corners = np.einsum('nij,nkj->nki', homographies, corners)  # shape: (n, 4, 3)
+    new_corners /= new_corners[:, :, [2]]  # Нормализация по z-координате
+
+    x_coords = new_corners[:, :, 0].ravel()  # shape: (n*4,)
+    y_coords = new_corners[:, :, 1].ravel()  # shape: (n*4,)
 
     x_min, x_max = np.min(x_coords), np.max(x_coords)
     y_min, y_max = np.min(y_coords), np.max(y_coords)
@@ -346,7 +396,6 @@ def find_translation_and_panorama_size(tile_set: TileSet) -> tuple[np.ndarray, t
         [0, 1, -y_min],
         [0, 0, 1]
     ])
-
     panorama_size = (int(np.ceil(x_max - x_min)), int(np.ceil(y_max - y_min)))
     return T, panorama_size
 

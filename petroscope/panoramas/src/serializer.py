@@ -118,8 +118,8 @@ class Serializer:
                 id=tile_data["id"],
                 img_path=Path(tile_data["img_path"]),
                 _image=None,  # Image is not saved, will be loaded on demand
+                _tensor=None,
                 orig_size=np.array(tile_data["orig_size"]),
-                inference_size=[600, 400],  # Default value since it's not saved
                 homography=self._load_array(base_path / "tiles" / tile_data["homography"]),
                 gain=self._load_array(base_path / "tiles" / tile_data["gain"])
             )
