@@ -17,7 +17,19 @@ def log_time(label, logger):
             start = time.perf_counter()
             result = func(*args, **kwargs)
             elapsed = time.perf_counter() - start
-            logger.debug(f"{label} {elapsed:.4f}")
+
+            elapsed_hours = elapsed // 3600
+            elapsed = elapsed % 3600
+            elapsed_minutes = elapsed // 60
+            elapsed = elapsed % 60
+            if elapsed_hours > 0:
+                elapsed_message = f"{elapsed_hours}h {elapsed_minutes}m {elapsed:.2f}s"
+            elif elapsed_minutes > 0:
+                elapsed_message = f"{elapsed_minutes}m {elapsed:.2f}s"
+            else:
+                elapsed_message = f"{elapsed:.2f}s"
+
+            logger.debug(f"{label} {elapsed_message:.4f}")
             return result
         return wrapper
     return decorator

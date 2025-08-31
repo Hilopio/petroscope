@@ -6,12 +6,12 @@ match:
 
 align:
   transformation_type: 'affine'  # 'affine' or 'projective'
-  confidence_tr: 0.95
-  min_inliers: 50
-  max_inliers: 200
+  confidence_tr: 0.7
+  min_inliers: 20
+  max_inliers: 50
   min_inlier_rate: 0.0
-  reproj_tr: 5.0
-  n_recenterings: 5
+  reproj_tr: 3.0
+  n_recenterings: 25
   use_BA: True
 
 compose:
@@ -35,25 +35,30 @@ blending:
 #   cache_dir: "/home/g.nikolaev/data/cache"
 #   panoramas_dir: "/home/g.nikolaev/data/panoramas"
 
+dirs:
+  tiles_dir: "/home/g.nikolaev/data/synt_tiles"
+  cache_dir: "/home/g.nikolaev/data/synt_cache"
+  panoramas_dir: "/home/g.nikolaev/data/synt_panoramas"
+
 # dirs:
 #   tiles_dir: "/home/g.nikolaev/data/metal_tiles"
 #   cache_dir: "/home/g.nikolaev/data/metal_cache"
 #   panoramas_dir: "/home/g.nikolaev/data/metal_panoramas"
 
 
-dirs:
-  tiles_dir: "/home/g.nikolaev/data/new_tiles"
-  cache_dir: "/home/g.nikolaev/data/new_cache"
-  panoramas_dir: "/home/g.nikolaev/data/new_panoramas"
+# dirs:
+#   tiles_dir: "/home/g.nikolaev/data/new_tiles"
+#   cache_dir: "/home/g.nikolaev/data/new_cache"
+#   panoramas_dir: "/home/g.nikolaev/data/new_panoramas"
 
 log:
   detailed_log: True
 
 vizualization:
   draw_inliers: False
-  draw_connections: False
+  draw_connections: True
 
-load_matches: True
+load_matches: False
 custom_undistortion: False
 n_undistortions: 1
 # stitching_mode: 'save_matches'
